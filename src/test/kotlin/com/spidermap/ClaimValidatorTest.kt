@@ -221,6 +221,99 @@ class ClaimValidatorTest {
         assertTrue("at least 3" in error, "wrong rule reported first: $error")
     }
 
+    // ---- 2.3: minimum area --------------------------------------------------
+
+    @Test
+    fun `rejects three exactly collinear points`() {
+        // No crossing, no touching — 2.2 lets this straight through. It encloses
+        // nothing at all.
+        val flat = listOf(Vertex(0, 0), Vertex(64, 0), Vertex(128, 0))
+
+        val error = validator.validate(flat)
+        assertNotNull(error)
+        assertTrue("too small or too thin" in error, "unhelpful message: $error")
+    }
+
+    @Test
+    fun `rejects three nearly collinear points`() {
+        // The checklist's case: a sliver one block deep over a 128 block span.
+        val sliver = listOf(Vertex(0, 0), Vertex(128, 0), Vertex(64, 1))
+
+        assertNotNull(validator.validate(sliver))
+    }
+
+    @Test
+    fun `rejects a repeated corner that collapses the shape`() {
+        val collapsed = listOf(Vertex(0, 0), Vertex(0, 0), Vertex(64, 0))
+
+        assertNotNull(validator.validate(collapsed))
+    }
+
+    @Test
+    fun `accepts the smallest drawable shape, a 16 by 16 right triangle`() {
+        // Area exactly 128 — the floor. This is drawable in the UI, so the
+        // server must not refuse it.
+        val minimal = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(0, 16))
+
+        assertNull(validator.validate(minimal), "the smallest drawable shape was rejected")
+    }
+
+    @Test
+    fun `accepts a single chunk square`() {
+        val chunk = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(16, 16), Vertex(0, 16))
+
+        assertNull(validator.validate(chunk))
+    }
+
+    @Test
+    fun `winding order does not affect the area check`() {
+        val clockwise = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(16, 16), Vertex(0, 16))
+        val anticlockwise = clockwise.reversed()
+
+        assertNull(validator.validate(clockwise))
+        assertNull(validator.validate(anticlockwise), "reversing the points changed the verdict")
+    }
+
+    @Test
+    fun `area is computed correctly for a concave shape`() {
+        // Shoelace handles concave polygons; a bounding-box approximation would
+        // not, and would wrongly accept a thin concave sliver.
+        val lShape = listOf(
+            Vertex(0, 0),
+            Vertex(64, 0),
+            Vertex(64, 32),
+            Vertex(32, 32),
+            Vertex(32, 64),
+            Vertex(0, 64),
+        )
+
+        assertNull(validator.validate(lShape))
+    }
+
+    @Test
+    fun `a huge claim near the world border does not overflow the area sum`() {
+        val far = 30_000_000
+        val square = listOf(
+            Vertex(-far, -far),
+            Vertex(far, -far),
+            Vertex(far, far),
+            Vertex(-far, far),
+        )
+
+        assertNull(validator.validate(square), "the area sum overflowed and rejected a valid claim")
+    }
+
+    @Test
+    fun `self-intersection is checked before area`() {
+        // A bowtie's shoelace area can come out large, so ordering matters: the
+        // crossing is the real problem and should be what gets reported.
+        val bowtie = listOf(Vertex(0, 0), Vertex(64, 64), Vertex(64, 0), Vertex(0, 64))
+
+        val error = validator.validate(bowtie)
+        assertNotNull(error)
+        assertTrue("crosses itself" in error, "wrong rule reported first: $error")
+    }
+
     private companion object {
         /** Matches the config.yml default, so the tests mirror a real server. */
         const val DEFAULT_CAP = 50

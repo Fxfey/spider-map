@@ -22,7 +22,34 @@ class ClaimValidator(private val vertexCap: Int) {
             "the outline crosses itself — a claim has to be a simple shape, " +
                 "so move the points so no two edges overlap"
 
+        doubledArea(vertices) < MINIMUM_DOUBLED_AREA ->
+            "this claim is too small or too thin to cover any ground — " +
+                "it needs to enclose at least $MINIMUM_AREA square blocks"
+
         else -> null
+    }
+
+    /**
+     * Twice the polygon's area, via the shoelace formula.
+     *
+     * Doubled and kept as a Long so the whole thing stays exact integer
+     * arithmetic — the formula's natural result is 2A, and halving it would
+     * introduce a rounding decision for no benefit.
+     *
+     * Correct for concave shapes, and sign-independent: the absolute value
+     * makes winding order irrelevant, so a claim drawn clockwise measures the
+     * same as the identical one drawn anticlockwise.
+     */
+    private fun doubledArea(vertices: List<Vertex>): Long {
+        var total = 0L
+
+        for (i in vertices.indices) {
+            val current = vertices[i]
+            val next = vertices[(i + 1) % vertices.size]
+            total += current.x.toLong() * next.z.toLong() - next.x.toLong() * current.z.toLong()
+        }
+
+        return kotlin.math.abs(total)
     }
 
     /**
@@ -98,5 +125,22 @@ class ClaimValidator(private val vertexCap: Int) {
          * describe a line, which has no inside for a player to stand in.
          */
         const val MINIMUM_VERTICES = 3
+
+        /**
+         * Smallest area a claim may enclose, in square blocks.
+         *
+         * 128 is the area of a 16×16 right triangle — the smallest shape the
+         * chunk-snapped drawing rules can actually produce (SDLC §2). Anything
+         * below it cannot have been drawn legitimately: collinear points, a
+         * repeated corner, or a sliver so thin it covers no ground.
+         *
+         * Deliberately not one full chunk (256). A half-chunk triangle is
+         * drawable in the UI, and the server rejecting a shape the client just
+         * allowed is a worse failure than permitting a small claim.
+         */
+        const val MINIMUM_AREA = 128
+
+        /** Compared against the doubled area, so the check stays integer-only. */
+        const val MINIMUM_DOUBLED_AREA = MINIMUM_AREA * 2L
     }
 }
