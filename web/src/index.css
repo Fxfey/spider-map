@@ -142,6 +142,51 @@ body {
   border-bottom-color: #444;
 }
 
+.draw-bar {
+  position: absolute;
+  top: 12px;
+  left: 60px; /* clear of Leaflet's zoom control */
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.draw-bar button {
+  padding: 7px 14px;
+  border: 1px solid #3d5a3d;
+  border-radius: 4px;
+  background: #2f4030;
+  color: #e0e0e0;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.draw-bar button:hover {
+  background: #3a5039;
+}
+
+.draw-bar button.drawing {
+  background: #4a3030;
+  border-color: #6b3030;
+}
+
+.draw-bar .hint,
+.draw-bar .drawn {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.85);
+  border: 1px solid #333;
+  color: #9a9a9a;
+  font-size: 0.8rem;
+}
+
+.draw-bar .drawn {
+  color: #7cc47c;
+  font-variant-numeric: tabular-nums;
+}
+
 .error {
   position: absolute;
   left: 12px;

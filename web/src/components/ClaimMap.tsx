@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { MapContainer, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { CRS } from 'leaflet'
 import ChunkGrid from './ChunkGrid'
+import ClaimDrawer from './ClaimDrawer'
 import { fromLatLng, roundPoint, toLatLng, type WorldPoint } from '../coords'
 import { fetchClaims, WORLDS, type Claim, type WorldId } from '../api'
 
@@ -42,6 +43,9 @@ export default function ClaimMap() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [world, setWorld] = useState<WorldId>('world')
   const [error, setError] = useState<string | null>(null)
+  const [drawing, setDrawing] = useState(false)
+  // 4.1 only reports what was drawn; 4.6 sends it to the API.
+  const [drawn, setDrawn] = useState<WorldPoint[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +86,26 @@ export default function ClaimMap() {
         <KeepSizeInSync />
         <ChunkGrid />
         <CursorTracker onMove={setCursor} />
+        <ClaimDrawer
+          active={drawing}
+          onComplete={(vertices) => {
+            setDrawn(vertices)
+            setDrawing(false)
+          }}
+        />
+
+        {/*
+          The shape just drawn, held in React state. Geoman's own layer is
+          discarded on completion, so without this the outline would simply
+          disappear at the moment you closed it. Dashed and amber to read as
+          "not saved yet" — 4.6 sends it to the API.
+        */}
+        {drawn && (
+          <Polygon
+            positions={drawn.map(toLatLng)}
+            pathOptions={{ color: '#d8a657', weight: 2, dashArray: '5 5', fillOpacity: 0.1 }}
+          />
+        )}
 
         {visible.map((claim) => (
           <Polygon
@@ -111,6 +135,33 @@ export default function ClaimMap() {
           </Polygon>
         ))}
       </MapContainer>
+
+      <div className="draw-bar">
+        <button
+          type="button"
+          className={drawing ? 'drawing' : undefined}
+          onClick={() => {
+            setDrawing((on) => !on)
+            setDrawn(null)
+          }}
+        >
+          {drawing ? 'Cancel' : 'Make claim'}
+        </button>
+
+        {drawing && <span className="hint">click to place points, click the first point to close</span>}
+
+        {drawn && (
+          <>
+            <span className="drawn">
+              {drawn.length} points:{' '}
+              {drawn.map((point) => `${point.x},${point.z}`).join('  ')}
+            </span>
+            <button type="button" onClick={() => setDrawn(null)}>
+              Discard
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="world-picker">
         {WORLDS.map((option) => (
