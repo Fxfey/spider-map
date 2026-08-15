@@ -16,12 +16,15 @@ import org.locationtech.jts.geom.Polygon
 class ClaimValidator(private val vertexCap: Int) {
 
     /**
+     * @param world the Bukkit world this claim lives in. Only claims in the
+     *   same world can overlap it — see [overlapProblem].
      * @param existingClaims every claim already stored, for the overlap check.
      * @param excludeClaimId the claim being edited. Its stored shape is skipped,
      *   or every edit would be rejected for overlapping its own old outline.
      */
     fun validate(
         vertices: List<Vertex>,
+        world: String,
         existingClaims: List<Claim> = emptyList(),
         excludeClaimId: String? = null,
     ): String? {
@@ -47,18 +50,25 @@ class ClaimValidator(private val vertexCap: Int) {
         }
         if (shapeProblem != null) return shapeProblem
 
-        return overlapProblem(vertices, existingClaims, excludeClaimId)
+        return overlapProblem(vertices, world, existingClaims, excludeClaimId)
     }
 
     /**
      * Claims may hug but not overlap (SDLC §2). Sharing an edge or a corner
      * with a neighbour is expected and fine; sharing actual ground is not.
      *
+     * Scoped to one world. Overworld, Nether and End are separate coordinate
+     * spaces — x=100,z=100 in the Nether is nowhere near x=100,z=100 in the
+     * Overworld, so comparing them would reject claims that cannot possibly
+     * conflict. (The Nether's 1:8 travel ratio is a movement rule, not a
+     * coordinate transform; the two spaces are simply unrelated here.)
+     *
      * A hard reject, deliberately — there is no merge, partial save or
      * conflict-resolution flow to fall back on.
      */
     private fun overlapProblem(
         vertices: List<Vertex>,
+        world: String,
         existingClaims: List<Claim>,
         excludeClaimId: String?,
     ): String? {
@@ -67,6 +77,7 @@ class ClaimValidator(private val vertexCap: Int) {
         val candidate = toPolygon(vertices)
 
         for (existing in existingClaims) {
+            if (existing.world != world) continue
             if (existing.id == excludeClaimId) continue
             if (existing.vertices.size < MINIMUM_VERTICES) continue
 

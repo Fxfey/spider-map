@@ -105,7 +105,7 @@ class ClaimRoutes(
             return
         }
 
-        validator.validate(request.vertices, store.load())?.let { problem ->
+        validator.validate(request.vertices, request.world, store.load())?.let { problem ->
             ctx.fail(400, problem)
             return
         }
@@ -141,9 +141,24 @@ class ClaimRoutes(
             return
         }
 
+        // The claim's world isn't in the request body — it isn't editable — so
+        // it has to be read off the stored claim to scope the overlap check.
+        val existingClaims = store.load()
+        val target = existingClaims.firstOrNull { it.id == id }
+
+        if (target == null) {
+            ctx.fail(404, "no claim with id '$id'")
+            return
+        }
+
         // Excludes this claim's own stored outline, or every edit would be
         // rejected for overlapping the shape it is replacing.
-        validator.validate(request.vertices, store.load(), excludeClaimId = id)?.let { problem ->
+        validator.validate(
+            vertices = request.vertices,
+            world = target.world,
+            existingClaims = existingClaims,
+            excludeClaimId = id,
+        )?.let { problem ->
             ctx.fail(400, problem)
             return
         }

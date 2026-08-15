@@ -10,6 +10,17 @@ class ClaimValidatorTest {
 
     private val validator = ClaimValidator(vertexCap = DEFAULT_CAP)
 
+    /**
+     * Most tests care about one world, so it defaults here rather than being
+     * repeated at every call site. The world-scoping tests pass it explicitly.
+     */
+    private fun validate(
+        vertices: List<Vertex>,
+        existing: List<Claim> = emptyList(),
+        excludeClaimId: String? = null,
+        world: String = "world",
+    ): String? = validator.validate(vertices, world, existing, excludeClaimId)
+
     /** Points on a circle, so no three are collinear and none repeat. */
     private fun polygon(pointCount: Int): List<Vertex> =
         (0 until pointCount).map { i ->
@@ -22,39 +33,39 @@ class ClaimValidatorTest {
 
     @Test
     fun `rejects an empty vertex list`() {
-        assertNotNull(validator.validate(emptyList()))
+        assertNotNull(validate(emptyList()))
     }
 
     @Test
     fun `rejects a single point`() {
-        assertNotNull(validator.validate(polygon(1)))
+        assertNotNull(validate(polygon(1)))
     }
 
     @Test
     fun `rejects two points, which describe a line and enclose nothing`() {
-        val error = validator.validate(polygon(2))
+        val error = validate(polygon(2))
         assertNotNull(error)
         assertTrue("at least 3" in error, "unhelpful message: $error")
     }
 
     @Test
     fun `accepts exactly three points, the smallest real polygon`() {
-        assertNull(validator.validate(polygon(3)))
+        assertNull(validate(polygon(3)))
     }
 
     @Test
     fun `accepts a typical four point claim`() {
-        assertNull(validator.validate(polygon(4)))
+        assertNull(validate(polygon(4)))
     }
 
     @Test
     fun `accepts exactly the cap`() {
-        assertNull(validator.validate(polygon(DEFAULT_CAP)))
+        assertNull(validate(polygon(DEFAULT_CAP)))
     }
 
     @Test
     fun `rejects one point over the cap`() {
-        val error = validator.validate(polygon(DEFAULT_CAP + 1))
+        val error = validate(polygon(DEFAULT_CAP + 1))
         assertNotNull(error)
         assertTrue("at most $DEFAULT_CAP" in error, "unhelpful message: $error")
     }
@@ -63,8 +74,8 @@ class ClaimValidatorTest {
     fun `the two failures give distinct messages`() {
         // 2.1's "done when" is that each boundary is distinguishable, so a user
         // can tell whether to add points or remove them.
-        val tooFew = validator.validate(polygon(2))
-        val tooMany = validator.validate(polygon(DEFAULT_CAP + 1))
+        val tooFew = validate(polygon(2))
+        val tooMany = validate(polygon(DEFAULT_CAP + 1))
 
         assertNotNull(tooFew)
         assertNotNull(tooMany)
@@ -76,16 +87,16 @@ class ClaimValidatorTest {
         // Proves the value is threaded from config rather than hardcoded.
         val strict = ClaimValidator(vertexCap = 4)
 
-        assertNull(strict.validate(polygon(4)))
-        assertNotNull(strict.validate(polygon(5)))
+        assertNull(strict.validate(polygon(4), "world"))
+        assertNotNull(strict.validate(polygon(5), "world"))
 
         // The message must quote the configured cap, not the default.
-        assertTrue("at most 4" in strict.validate(polygon(5))!!)
+        assertTrue("at most 4" in strict.validate(polygon(5), "world")!!)
     }
 
     @Test
     fun `the reported count is the actual count`() {
-        val error = validator.validate(polygon(2))
+        val error = validate(polygon(2))
         assertNotNull(error)
         assertTrue("has 2" in error, "message should say how many were given: $error")
     }
@@ -103,7 +114,7 @@ class ClaimValidatorTest {
             Vertex(0, 64),
         )
 
-        val error = validator.validate(bowtie)
+        val error = validate(bowtie)
         assertNotNull(error)
         assertTrue("crosses itself" in error, "unhelpful message: $error")
     }
@@ -111,7 +122,7 @@ class ClaimValidatorTest {
     @Test
     fun `accepts a plain square`() {
         assertNull(
-            validator.validate(
+            validate(
                 listOf(Vertex(0, 0), Vertex(64, 0), Vertex(64, 64), Vertex(0, 64)),
             )
         )
@@ -130,7 +141,7 @@ class ClaimValidatorTest {
             Vertex(0, 64),
         )
 
-        assertNull(validator.validate(lShape), "a concave shape was wrongly rejected")
+        assertNull(validate(lShape), "a concave shape was wrongly rejected")
     }
 
     @Test
@@ -151,7 +162,7 @@ class ClaimValidatorTest {
             Vertex(0, 64),
         )
 
-        assertNull(validator.validate(comb), "a concave comb was wrongly rejected")
+        assertNull(validate(comb), "a concave comb was wrongly rejected")
     }
 
     @Test
@@ -167,19 +178,19 @@ class ClaimValidatorTest {
             Vertex(32, 32),
         )
 
-        assertNotNull(validator.validate(touching))
+        assertNotNull(validate(touching))
     }
 
     @Test
     fun `accepts a triangle`() {
-        assertNull(validator.validate(listOf(Vertex(0, 0), Vertex(64, 0), Vertex(32, 64))))
+        assertNull(validate(listOf(Vertex(0, 0), Vertex(64, 0), Vertex(32, 64))))
     }
 
     @Test
     fun `accepts a chunk aligned claim at real world coordinates`() {
         // The schema example from SDLC §4, at coordinates a server would use.
         assertNull(
-            validator.validate(
+            validate(
                 listOf(Vertex(128, -64), Vertex(144, -64), Vertex(144, -48), Vertex(128, -48)),
             )
         )
@@ -197,7 +208,7 @@ class ClaimValidatorTest {
             Vertex(-far, far),
         )
 
-        assertNotNull(validator.validate(bowtie), "overflow hid a real crossing")
+        assertNotNull(validate(bowtie), "overflow hid a real crossing")
     }
 
     @Test
@@ -210,13 +221,13 @@ class ClaimValidatorTest {
             Vertex(-far, far),
         )
 
-        assertNull(validator.validate(square), "overflow invented a crossing")
+        assertNull(validate(square), "overflow invented a crossing")
     }
 
     @Test
     fun `vertex count is checked before self-intersection`() {
         // Two points cannot self-intersect; the count message is the useful one.
-        val error = validator.validate(listOf(Vertex(0, 0), Vertex(64, 64)))
+        val error = validate(listOf(Vertex(0, 0), Vertex(64, 64)))
         assertNotNull(error)
         assertTrue("at least 3" in error, "wrong rule reported first: $error")
     }
@@ -229,7 +240,7 @@ class ClaimValidatorTest {
         // nothing at all.
         val flat = listOf(Vertex(0, 0), Vertex(64, 0), Vertex(128, 0))
 
-        val error = validator.validate(flat)
+        val error = validate(flat)
         assertNotNull(error)
         assertTrue("too small or too thin" in error, "unhelpful message: $error")
     }
@@ -239,14 +250,14 @@ class ClaimValidatorTest {
         // The checklist's case: a sliver one block deep over a 128 block span.
         val sliver = listOf(Vertex(0, 0), Vertex(128, 0), Vertex(64, 1))
 
-        assertNotNull(validator.validate(sliver))
+        assertNotNull(validate(sliver))
     }
 
     @Test
     fun `rejects a repeated corner that collapses the shape`() {
         val collapsed = listOf(Vertex(0, 0), Vertex(0, 0), Vertex(64, 0))
 
-        assertNotNull(validator.validate(collapsed))
+        assertNotNull(validate(collapsed))
     }
 
     @Test
@@ -255,14 +266,14 @@ class ClaimValidatorTest {
         // server must not refuse it.
         val minimal = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(0, 16))
 
-        assertNull(validator.validate(minimal), "the smallest drawable shape was rejected")
+        assertNull(validate(minimal), "the smallest drawable shape was rejected")
     }
 
     @Test
     fun `accepts a single chunk square`() {
         val chunk = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(16, 16), Vertex(0, 16))
 
-        assertNull(validator.validate(chunk))
+        assertNull(validate(chunk))
     }
 
     @Test
@@ -270,8 +281,8 @@ class ClaimValidatorTest {
         val clockwise = listOf(Vertex(0, 0), Vertex(16, 0), Vertex(16, 16), Vertex(0, 16))
         val anticlockwise = clockwise.reversed()
 
-        assertNull(validator.validate(clockwise))
-        assertNull(validator.validate(anticlockwise), "reversing the points changed the verdict")
+        assertNull(validate(clockwise))
+        assertNull(validate(anticlockwise), "reversing the points changed the verdict")
     }
 
     @Test
@@ -287,7 +298,7 @@ class ClaimValidatorTest {
             Vertex(0, 64),
         )
 
-        assertNull(validator.validate(lShape))
+        assertNull(validate(lShape))
     }
 
     @Test
@@ -300,7 +311,7 @@ class ClaimValidatorTest {
             Vertex(-far, far),
         )
 
-        assertNull(validator.validate(square), "the area sum overflowed and rejected a valid claim")
+        assertNull(validate(square), "the area sum overflowed and rejected a valid claim")
     }
 
     @Test
@@ -309,7 +320,7 @@ class ClaimValidatorTest {
         // crossing is the real problem and should be what gets reported.
         val bowtie = listOf(Vertex(0, 0), Vertex(64, 64), Vertex(64, 0), Vertex(0, 64))
 
-        val error = validator.validate(bowtie)
+        val error = validate(bowtie)
         assertNotNull(error)
         assertTrue("crosses itself" in error, "wrong rule reported first: $error")
     }
@@ -346,7 +357,7 @@ class ClaimValidatorTest {
         val abutting = box(64, 0, 128, 64)
 
         assertNull(
-            validator.validate(abutting, listOf(existing)),
+            validate(abutting, listOf(existing)),
             "claims sharing a border were wrongly rejected as overlapping",
         )
     }
@@ -356,7 +367,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
         val overlapping = box(32, 32, 96, 96)
 
-        val error = validator.validate(overlapping, listOf(existing))
+        val error = validate(overlapping, listOf(existing))
         assertNotNull(error)
         assertTrue("overlaps" in error, "unhelpful message: $error")
         assertTrue("Willowbrook Manor" in error, "the message should name the claim in the way: $error")
@@ -370,7 +381,7 @@ class ClaimValidatorTest {
         val edited = box(0, 0, 80, 64)
 
         assertNull(
-            validator.validate(edited, listOf(existing), excludeClaimId = "being-edited"),
+            validate(edited, listOf(existing), excludeClaimId = "being-edited"),
             "a claim was rejected for overlapping its own previous outline",
         )
     }
@@ -384,7 +395,7 @@ class ClaimValidatorTest {
 
         val grownIntoNeighbour = box(0, 0, 160, 64)
 
-        val error = validator.validate(
+        val error = validate(
             grownIntoNeighbour,
             listOf(self, neighbour),
             excludeClaimId = "being-edited",
@@ -400,7 +411,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Corner Neighbour", 0, 0, 64, 64)
         val diagonal = box(64, 64, 128, 128)
 
-        assertNull(validator.validate(diagonal, listOf(existing)))
+        assertNull(validate(diagonal, listOf(existing)))
     }
 
     @Test
@@ -410,7 +421,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Big Estate", 0, 0, 256, 256)
         val inside = box(64, 64, 128, 128)
 
-        assertNotNull(validator.validate(inside, listOf(existing)))
+        assertNotNull(validate(inside, listOf(existing)))
     }
 
     @Test
@@ -418,7 +429,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Small Plot", 64, 64, 128, 128)
         val swallowing = box(0, 0, 256, 256)
 
-        assertNotNull(validator.validate(swallowing, listOf(existing)))
+        assertNotNull(validate(swallowing, listOf(existing)))
     }
 
     @Test
@@ -427,7 +438,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
         val barelyOver = box(63, 0, 128, 64)
 
-        assertNotNull(validator.validate(barelyOver, listOf(existing)))
+        assertNotNull(validate(barelyOver, listOf(existing)))
     }
 
     @Test
@@ -435,7 +446,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Far Away", 0, 0, 64, 64)
         val elsewhere = box(1000, 1000, 1064, 1064)
 
-        assertNull(validator.validate(elsewhere, listOf(existing)))
+        assertNull(validate(elsewhere, listOf(existing)))
     }
 
     @Test
@@ -461,7 +472,7 @@ class ClaimValidatorTest {
         val fillsTheNotch = box(32, 32, 64, 64)
 
         assertNull(
-            validator.validate(fillsTheNotch, listOf(lShape)),
+            validate(fillsTheNotch, listOf(lShape)),
             "a claim filling a neighbour's notch was wrongly rejected",
         )
     }
@@ -473,7 +484,7 @@ class ClaimValidatorTest {
         val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
 
         assertNotNull(
-            validator.validate(box(0, 0, 64, 64), listOf(existing)),
+            validate(box(0, 0, 64, 64), listOf(existing)),
             "an exact duplicate was accepted",
         )
     }
@@ -484,7 +495,7 @@ class ClaimValidatorTest {
         // entirely, which is the reason containment needs testing separately.
         val estate = boxClaim("first", "Big Estate", 0, 0, 512, 512)
 
-        assertNotNull(validator.validate(box(240, 240, 272, 272), listOf(estate)))
+        assertNotNull(validate(box(240, 240, 272, 272), listOf(estate)))
     }
 
     @Test
@@ -494,7 +505,7 @@ class ClaimValidatorTest {
         // "do they touch?" implementation.
         val estate = boxClaim("first", "Big Estate", 0, 0, 256, 256)
 
-        assertNotNull(validator.validate(box(0, 0, 64, 64), listOf(estate)))
+        assertNotNull(validate(box(0, 0, 64, 64), listOf(estate)))
     }
 
     @Test
@@ -503,7 +514,7 @@ class ClaimValidatorTest {
         // ground.
         val estate = boxClaim("first", "Big Estate", 0, 0, 256, 256)
 
-        assertNotNull(validator.validate(box(192, 192, 256, 256), listOf(estate)))
+        assertNotNull(validate(box(192, 192, 256, 256), listOf(estate)))
     }
 
     @Test
@@ -528,7 +539,7 @@ class ClaimValidatorTest {
         )
 
         // Well inside the horizontal arm.
-        assertNotNull(validator.validate(box(128, 16, 160, 48), listOf(lShape)))
+        assertNotNull(validate(box(128, 16, 160, 48), listOf(lShape)))
     }
 
     @Test
@@ -554,7 +565,7 @@ class ClaimValidatorTest {
         )
 
         assertNull(
-            validator.validate(box(128, 128, 192, 192), listOf(lShape)),
+            validate(box(128, 128, 192, 192), listOf(lShape)),
             "a claim in the empty notch was wrongly rejected",
         )
     }
@@ -565,9 +576,9 @@ class ClaimValidatorTest {
         val large = boxClaim("large", "Big Estate", 0, 0, 256, 256)
 
         // New claim inside an existing one...
-        assertNotNull(validator.validate(box(80, 80, 112, 112), listOf(large)))
+        assertNotNull(validate(box(80, 80, 112, 112), listOf(large)))
         // ...and a new claim swallowing an existing one.
-        assertNotNull(validator.validate(box(0, 0, 256, 256), listOf(small)))
+        assertNotNull(validate(box(0, 0, 256, 256), listOf(small)))
     }
 
     @Test
@@ -580,7 +591,7 @@ class ClaimValidatorTest {
             boxClaim("c", "Third", 256, 0, 512, 256),
         )
 
-        val error = validator.validate(box(300, 50, 360, 110), store)
+        val error = validate(box(300, 50, 360, 110), store)
         assertNotNull(error)
         assertTrue("Third" in error, "wrong claim named: $error")
     }
@@ -592,7 +603,7 @@ class ClaimValidatorTest {
         val self = boxClaim("mine", "Mine", 0, 0, 64, 64)
         val neighbour = boxClaim("theirs", "Theirs", 128, 128, 192, 192)
 
-        val error = validator.validate(
+        val error = validate(
             box(0, 0, 256, 256),
             listOf(self, neighbour),
             excludeClaimId = "mine",
@@ -607,14 +618,95 @@ class ClaimValidatorTest {
         // problem must be reported rather than a JTS failure surfacing.
         val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
 
-        val error = validator.validate(listOf(Vertex(0, 0), Vertex(64, 64)), listOf(existing))
+        val error = validate(listOf(Vertex(0, 0), Vertex(64, 64)), listOf(existing))
         assertNotNull(error)
         assertTrue("at least 3" in error, "wrong rule reported first: $error")
     }
 
     @Test
     fun `an empty store never reports an overlap`() {
-        assertNull(validator.validate(box(0, 0, 64, 64), emptyList()))
+        assertNull(validate(box(0, 0, 64, 64), emptyList()))
+    }
+
+    // ---- 2.5: world scoping -------------------------------------------------
+
+    @Test
+    fun `identical claims in different worlds are both accepted`() {
+        // 2.5's stated verify. The Overworld and the Nether are separate
+        // coordinate spaces, so the same x/z is not the same place.
+        val overworld = boxClaim("ow", "Overworld Base", 0, 0, 64, 64, world = "world")
+        val sameFootprint = box(0, 0, 64, 64)
+
+        assertNull(
+            validate(sameFootprint, listOf(overworld), world = "world_nether"),
+            "a Nether claim was blocked by an Overworld claim at the same coordinates",
+        )
+    }
+
+    @Test
+    fun `the same footprint is valid in all three worlds at once`() {
+        val footprint = box(0, 0, 64, 64)
+        val existing = listOf(
+            boxClaim("a", "Overworld", 0, 0, 64, 64, world = "world"),
+            boxClaim("b", "Nether", 0, 0, 64, 64, world = "world_nether"),
+        )
+
+        assertNull(validate(footprint, existing, world = "world_the_end"))
+    }
+
+    @Test
+    fun `overlap is still caught within the same world`() {
+        // World scoping must narrow the check, not disable it.
+        val nether = boxClaim("n", "Nether Fortress", 0, 0, 64, 64, world = "world_nether")
+
+        val error = validate(box(32, 32, 96, 96), listOf(nether), world = "world_nether")
+        assertNotNull(error)
+        assertTrue("Nether Fortress" in error, "wrong claim named: $error")
+    }
+
+    @Test
+    fun `containment across worlds is allowed`() {
+        // A Nether claim entirely inside an Overworld one's footprint is not a
+        // conflict — it is a different dimension.
+        val estate = boxClaim("e", "Big Estate", 0, 0, 512, 512, world = "world")
+
+        assertNull(validate(box(240, 240, 272, 272), listOf(estate), world = "world_the_end"))
+    }
+
+    @Test
+    fun `the right world is picked out of a mixed store`() {
+        val store = listOf(
+            boxClaim("a", "Overworld Plot", 0, 0, 64, 64, world = "world"),
+            boxClaim("b", "Nether Plot", 0, 0, 64, 64, world = "world_nether"),
+            boxClaim("c", "End Plot", 0, 0, 64, 64, world = "world_the_end"),
+        )
+
+        // Overlaps all three footprints, but only the End one counts.
+        val error = validate(box(32, 32, 96, 96), store, world = "world_the_end")
+        assertNotNull(error)
+        assertTrue("End Plot" in error, "matched a claim from the wrong world: $error")
+    }
+
+    @Test
+    fun `an edit is not blocked by a same-coordinate claim in another world`() {
+        val self = boxClaim("mine", "Mine", 0, 0, 64, 64, world = "world")
+        val elsewhere = boxClaim("other", "Nether Twin", 0, 0, 128, 128, world = "world_nether")
+
+        assertNull(
+            validate(box(0, 0, 80, 80), listOf(self, elsewhere), excludeClaimId = "mine", world = "world"),
+        )
+    }
+
+    @Test
+    fun `world matching is exact, not a prefix`() {
+        // "world" is a prefix of "world_nether"; a startsWith comparison would
+        // wrongly treat them as the same space.
+        val nether = boxClaim("n", "Nether Plot", 0, 0, 64, 64, world = "world_nether")
+
+        assertNull(
+            validate(box(0, 0, 64, 64), listOf(nether), world = "world"),
+            "world names were compared loosely",
+        )
     }
 
     private companion object {
