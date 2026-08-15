@@ -1,5 +1,8 @@
 plugins {
     kotlin("jvm") version "2.4.10"
+    // Generates the serializers at compile time, so no reflection is needed at
+    // runtime — one less thing to go wrong under Paper's plugin classloader.
+    kotlin("plugin.serialization") version "2.4.10"
     id("com.gradleup.shadow") version "9.6.1"
 }
 
@@ -24,6 +27,14 @@ dependencies {
         exclude(group = "org.slf4j", module = "slf4j-simple")
         exclude(group = "org.slf4j", module = "slf4j-api")
     }
+
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
+    testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 kotlin {
