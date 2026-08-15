@@ -163,8 +163,13 @@ body {
   cursor: pointer;
 }
 
-.draw-bar button:hover {
+.draw-bar button:hover:not(:disabled) {
   background: #3a5039;
+}
+
+.draw-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .draw-bar button.drawing {

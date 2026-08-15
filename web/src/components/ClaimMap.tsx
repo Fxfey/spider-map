@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapContainer, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { CRS } from 'leaflet'
 import ChunkGrid from './ChunkGrid'
@@ -46,6 +46,10 @@ export default function ClaimMap() {
   const [drawing, setDrawing] = useState(false)
   // 4.1 only reports what was drawn; 4.6 sends it to the API.
   const [drawn, setDrawn] = useState<WorldPoint[] | null>(null)
+  const [placedCount, setPlacedCount] = useState(0)
+  // Filled by the drawer while a session is live. Held in a ref because the
+  // drawing session lives inside Leaflet, below this component.
+  const undoRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +92,8 @@ export default function ClaimMap() {
         <CursorTracker onMove={setCursor} />
         <ClaimDrawer
           active={drawing}
+          undoRef={undoRef}
+          onProgress={setPlacedCount}
           onComplete={(vertices) => {
             setDrawn(vertices)
             setDrawing(false)
@@ -148,7 +154,23 @@ export default function ClaimMap() {
           {drawing ? 'Cancel' : 'Make claim'}
         </button>
 
-        {drawing && <span className="hint">click to place points, click the first point to close</span>}
+        {drawing && (
+          <>
+            <button
+              type="button"
+              // Nothing to undo below two corners — Geoman ends the session
+              // rather than removing the last one, so the button is disabled
+              // instead of quietly cancelling the drawing.
+              disabled={placedCount <= 1}
+              onClick={() => undoRef.current?.()}
+            >
+              Undo
+            </button>
+            <span className="hint">
+              {placedCount} placed — click the first point to close, right-click to undo
+            </span>
+          </>
+        )}
 
         {drawn && (
           <>

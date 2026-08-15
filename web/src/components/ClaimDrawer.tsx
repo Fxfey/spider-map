@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { useMap } from 'react-leaflet'
 import type { LatLng, LeafletMouseEvent, Layer, Marker, Polygon as LeafletPolygon } from 'leaflet'
 import '@geoman-io/leaflet-geoman-free'
@@ -8,6 +8,10 @@ import { fromLatLng, snapFromPrevious, toLatLng, type WorldPoint } from '../coor
 interface ClaimDrawerProps {
   active: boolean
   onComplete: (vertices: WorldPoint[]) => void
+  /** How many corners are placed so far, so the toolbar can enable Undo. */
+  onProgress: (placedCount: number) => void
+  /** Filled with an undo function while drawing, cleared when it stops. */
+  undoRef: RefObject<(() => void) | null>
 }
 
 /**
@@ -23,19 +27,22 @@ interface GeomanPolygonDraw {
   _syncHintLine?: () => void
   /** The in-progress outline. Its last point is the corner we snap against. */
   _layer?: { getLatLngs: () => LatLng[] }
+  /** One per placed corner. */
+  _markers?: unknown[]
+  _removeLastVertex?: () => void
 }
 
 /**
- * Click-to-place polygon drawing, on Geoman, snapped to the chunk grid.
+ * Click-to-place polygon drawing, on Geoman, snapped to the chunk grid at 45°.
  *
  * Geoman's own toolbar is never added — drawing is driven entirely by our own
  * button, so the map keeps one visual language.
  */
-export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
+export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }: ClaimDrawerProps) {
   const map = useMap()
 
   /**
-   * The callback is held in a ref, and deliberately kept out of the effect's
+   * Callbacks are held in refs, and deliberately kept out of the effect's
    * dependencies.
    *
    * A drawing session is long-lived state living inside Leaflet, but the parent
@@ -46,16 +53,25 @@ export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
    * the whole interaction flickers.
    */
   const onCompleteRef = useRef(onComplete)
+  const onProgressRef = useRef(onProgress)
   useEffect(() => {
     onCompleteRef.current = onComplete
-  }, [onComplete])
+    onProgressRef.current = onProgress
+  }, [onComplete, onProgress])
 
   useEffect(() => {
-    if (!active) return
+    if (!active) {
+      undoRef.current = null
+      onProgressRef.current(0)
+      return
+    }
+
+    const draw = () => map.pm.Draw.Polygon as unknown as GeomanPolygonDraw
+    const placedCount = () => draw()._markers?.length ?? 0
 
     map.pm.enableDraw('Polygon', {
       // Geoman's snapping is to *other layers*, which is not what SDLC §2 asks
-      // for. The grid rule is applied by hand below.
+      // for. The grid and angle rules are applied by hand below.
       snappable: false,
       templineStyle: { color: '#7cc47c', weight: 2 },
       hintlineStyle: { color: '#7cc47c', weight: 2, dashArray: '4 4' },
@@ -78,13 +94,12 @@ export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
      * handler and gets the final say on where the marker sits.
      */
     const snapHintMarker = (event: LeafletMouseEvent) => {
-      const draw = map.pm.Draw.Polygon as unknown as GeomanPolygonDraw
-      const hint = draw._hintMarker
+      const hint = draw()._hintMarker
       if (!hint) return
 
       // The corner already placed, which the new edge runs from. Absent for the
       // very first point, where there is no angle to honour.
-      const placed = draw._layer?.getLatLngs() ?? []
+      const placed = draw()._layer?.getLatLngs() ?? []
       const last = placed.length > 0 ? placed[placed.length - 1] : undefined
       const previous = last ? fromLatLng(last.lat, last.lng) : null
 
@@ -95,10 +110,10 @@ export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
 
       // The rubber band was already drawn to the unsnapped position by
       // Geoman's handler; redraw it now the marker has moved.
-      draw._syncHintLine?.()
+      draw()._syncHintLine?.()
     }
 
-    map.on('mousemove', snapHintMarker)
+    const reportProgress = () => onProgressRef.current(placedCount())
 
     const handleCreate = (event: { layer: Layer }) => {
       const polygon = event.layer as LeafletPolygon
@@ -111,14 +126,52 @@ export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
       onCompleteRef.current(ring.map((point) => fromLatLng(point.lat, point.lng)))
     }
 
+    /**
+     * Removes the most recently placed corner.
+     *
+     * Guarded at one corner rather than zero: Geoman's `_removeLastVertex`
+     * calls `disable()` when only one marker is left, which would end the
+     * drawing session instead of undoing a point. Stopping short keeps the
+     * session alive, and undo simply does nothing once there is nothing to
+     * remove — 4.4's stated behaviour at zero points.
+     */
+    const undo = () => {
+      if (placedCount() <= 1) return
+      draw()._removeLastVertex?.()
+      reportProgress()
+    }
+
+    /** Right-click removes the last corner, the usual gesture in drawing tools. */
+    const handleContextMenu = (event: LeafletMouseEvent) => {
+      // Otherwise the browser menu opens over the map on every undo.
+      event.originalEvent.preventDefault()
+      undo()
+    }
+
+    map.on('mousemove', snapHintMarker)
     map.on('pm:create', handleCreate)
+    map.on('contextmenu', handleContextMenu)
+
+    // Geoman fires pm:vertexadded on its *working layer*, and its event helper
+    // defaults to propagate = false — so listening on the map never sees it.
+    // Both of these do fire on the map, and reading _markers.length afterwards
+    // is accurate regardless of which one got there first.
+    map.on('click', reportProgress)
+    map.on('mousemove', reportProgress)
+
+    undoRef.current = undo
+    reportProgress()
 
     return () => {
       map.off('mousemove', snapHintMarker)
       map.off('pm:create', handleCreate)
+      map.off('contextmenu', handleContextMenu)
+      map.off('click', reportProgress)
+      map.off('mousemove', reportProgress)
+      undoRef.current = null
       map.pm.disableDraw()
     }
-  }, [active, map])
+  }, [active, map, undoRef])
 
   return null
 }
