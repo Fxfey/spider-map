@@ -30,3 +30,22 @@ export function fromLatLng(lat: number, lng: number): WorldPoint {
 export function roundPoint({ x, z }: WorldPoint): WorldPoint {
   return { x: Math.floor(x), z: Math.floor(z) }
 }
+
+/** One chunk. Claim corners snap to this grid (SDLC §2). */
+export const CHUNK_SIZE = 16
+
+/**
+ * Snaps a point to the nearest chunk corner.
+ *
+ * Chunk alignment is not cosmetic: it is what lets the plugin find a player's
+ * claim by looking up their current chunk instead of testing every claim on
+ * every move (SDLC §7). A vertex that is off-grid quietly breaks that
+ * assumption, so this is applied to the drawing preview rather than only on
+ * save — you always place the point that will actually be stored.
+ */
+export function snapToGrid({ x, z }: WorldPoint, grid: number = CHUNK_SIZE): WorldPoint {
+  return {
+    x: Math.round(x / grid) * grid,
+    z: Math.round(z / grid) * grid,
+  }
+}
