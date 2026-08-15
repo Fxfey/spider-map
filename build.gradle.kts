@@ -47,12 +47,54 @@ kotlin {
     jvmToolchain(25)
 }
 
+// ---------------------------------------------------------------- web UI
+//
+// The React app is built by Vite and copied into the jar, so deployment stays
+// a single artifact and the UI is served from the same origin as the API.
+
+val webDir = layout.projectDirectory.dir("web")
+val webDist = webDir.dir("dist")
+
+/** npm ships as a .cmd shim on Windows, which Exec will not resolve on its own. */
+val npm = if (System.getProperty("os.name").startsWith("Windows")) "npm.cmd" else "npm"
+
+val npmInstall = tasks.register<Exec>("npmInstall") {
+    description = "Installs the web UI's dependencies."
+    workingDir = webDir.asFile
+    commandLine(npm, "install")
+
+    // Re-runs only when the manifest changes, not on every build.
+    inputs.file(webDir.file("package.json"))
+    inputs.file(webDir.file("package-lock.json"))
+    outputs.dir(webDir.dir("node_modules"))
+}
+
+val buildWeb = tasks.register<Exec>("buildWeb") {
+    description = "Builds the React app into web/dist."
+    dependsOn(npmInstall)
+    workingDir = webDir.asFile
+    commandLine(npm, "run", "build")
+
+    inputs.dir(webDir.dir("src"))
+    inputs.dir(webDir.dir("public"))
+    inputs.file(webDir.file("index.html"))
+    inputs.file(webDir.file("vite.config.ts"))
+    inputs.file(webDir.file("tsconfig.app.json"))
+    outputs.dir(webDist)
+}
+
 tasks.processResources {
     // Lets plugin.yml carry the version from one place instead of duplicating it.
     val props = mapOf("version" to project.version.toString())
     inputs.properties(props)
     filesMatching("plugin.yml") {
         expand(props)
+    }
+
+    // Lands at /web inside the jar, where WebServer already points Javalin.
+    dependsOn(buildWeb)
+    from(webDist) {
+        into("web")
     }
 }
 
