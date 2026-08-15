@@ -125,6 +125,18 @@ body {
   box-shadow: none;
 }
 
+.claim-title {
+  display: block;
+  font-weight: 600;
+}
+
+.claim-owner {
+  display: block;
+  margin-top: 2px;
+  color: #9a9a9a;
+  font-size: 0.85em;
+}
+
 .leaflet-tooltip::before {
   border-top-color: #444;
   border-bottom-color: #444;

@@ -92,7 +92,22 @@ export default function ClaimMap() {
             {/* sticky: follows the cursor, so it reads the claim you're over
                 rather than the polygon's centre, which for a concave shape can
                 sit outside the claim entirely. */}
-            <Tooltip sticky>{claim.title}</Tooltip>
+            <Tooltip sticky>
+              <span className="claim-title">{claim.title}</span>
+              {/*
+                Owner is optional. An unowned claim like Spawn drops the line
+                entirely rather than showing "owned by none" — the same rule the
+                in-game announcement follows (SDLC §2).
+
+                Guarded on owner_name rather than owner_uuid: a claim can carry
+                a UUID whose username hasn't been cached yet, and "owned by"
+                followed by nothing is exactly the broken-looking output this
+                step exists to prevent.
+              */}
+              {claim.owner_name && (
+                <span className="claim-owner">owned by {claim.owner_name}</span>
+              )}
+            </Tooltip>
           </Polygon>
         ))}
       </MapContainer>
