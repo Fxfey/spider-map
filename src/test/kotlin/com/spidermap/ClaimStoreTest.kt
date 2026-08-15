@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -99,6 +100,88 @@ class ClaimStoreTest {
         assertEquals(claims, loaded)
         assertEquals(setOf("world", "world_nether"), loaded.map { it.world }.toSet())
     }
+
+    // ---- 1.2: atomic writes -------------------------------------------------
+
+    @Test
+    fun `a failure mid-write leaves the previous file completely intact`() {
+        val file = tempClaimsFile()
+        val store = ClaimStore(file)
+        store.save(listOf(sampleClaim()))
+        val before = Files.readString(file)
+
+        // Stands in for the process dying between opening the temp file and
+        // renaming it over the target.
+        assertFailsWith<IllegalStateException> {
+            store.writeAtomically { throw IllegalStateException("simulated crash mid-write") }
+        }
+
+        assertEquals(before, Files.readString(file), "claims.json was modified by a failed write")
+        assertEquals(1, store.load().size)
+        assertEquals("Willowbrook Manor", store.load().single().title)
+    }
+
+    @Test
+    fun `a failed write leaves no temp file behind`() {
+        val file = tempClaimsFile()
+        val store = ClaimStore(file)
+        store.save(listOf(sampleClaim()))
+
+        assertFailsWith<IllegalStateException> {
+            store.writeAtomically { throw IllegalStateException("boom") }
+        }
+
+        assertEquals(emptyList(), tempFilesIn(file), "a crashed write left temp files behind")
+    }
+
+    @Test
+    fun `a successful save leaves no temp file behind`() {
+        val file = tempClaimsFile()
+        val store = ClaimStore(file)
+
+        store.save(listOf(sampleClaim()))
+        store.save(listOf(sampleClaim(), sampleClaim(id = "second-claim-id")))
+
+        assertEquals(emptyList(), tempFilesIn(file))
+        assertEquals(2, store.load().size)
+    }
+
+    @Test
+    fun `a leftover temp file from a crash does not affect what loads`() {
+        val file = tempClaimsFile()
+        val store = ClaimStore(file)
+        store.save(listOf(sampleClaim()))
+
+        // Half-written JSON, exactly what a crash before the rename would leave.
+        Files.writeString(
+            file.parent.resolve("claims-orphan.tmp"),
+            """[{"id":"partial","title":"truncat""",
+        )
+
+        val loaded = store.load()
+        assertEquals(1, loaded.size)
+        assertEquals("Willowbrook Manor", loaded.single().title)
+    }
+
+    @Test
+    fun `the file is never observed partially written`() {
+        val file = tempClaimsFile()
+        val store = ClaimStore(file)
+
+        // Every save must land whole: parse after each one, not just at the end.
+        repeat(25) { i ->
+            store.save(List(i + 1) { n -> sampleClaim(id = "claim-$n") })
+            val loaded = store.load()
+            assertEquals(i + 1, loaded.size, "save #$i produced an unreadable or partial file")
+        }
+    }
+
+    private fun tempFilesIn(file: Path): List<String> =
+        Files.list(file.parent).use { stream ->
+            stream.map { it.fileName.toString() }
+                .filter { it.endsWith(".tmp") }
+                .toList()
+        }
 
     @Test
     fun `stored file uses the snake_case field names from the spec`() {
