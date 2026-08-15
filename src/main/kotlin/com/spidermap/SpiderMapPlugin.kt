@@ -13,8 +13,14 @@ class SpiderMapPlugin : JavaPlugin() {
         // opening the file (checklist 0.3 verify).
         logger.info("Config: ${pluginConfig.describe()}")
 
+        val claimStore = ClaimStore(pluginConfig.claimsFile)
+
         try {
-            webServer = WebServer(componentLogger, pluginConfig.webPort).apply { start() }
+            webServer = WebServer(
+                logger = componentLogger,
+                port = pluginConfig.webPort,
+                claimRoutes = ClaimRoutes(claimStore),
+            ).apply { start() }
         } catch (e: Exception) {
             // A bound port would otherwise leave the plugin "enabled" but with
             // no web UI, which is a confusing state to debug. Fail loudly.

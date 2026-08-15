@@ -11,7 +11,11 @@ import net.kyori.adventure.text.logger.slf4j.ComponentLogger
  * Embedded HTTP server. Serves the web UI and (from Milestone 1) the REST API
  * from the same origin, so the browser never needs CORS (SDLC §1).
  */
-class WebServer(private val logger: ComponentLogger, private val port: Int) {
+class WebServer(
+    private val logger: ComponentLogger,
+    private val port: Int,
+    private val claimRoutes: ClaimRoutes,
+) {
 
     private var app: Javalin? = null
 
@@ -29,6 +33,8 @@ class WebServer(private val logger: ComponentLogger, private val port: Int) {
                 staticFiles.directory = "/web"
                 staticFiles.location = Location.CLASSPATH
             }
+            // Javalin 7 declares routes through config rather than on the app.
+            claimRoutes.register(config.routes)
         }.start(port)
 
         announceReady()
