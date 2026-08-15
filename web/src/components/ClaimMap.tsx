@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, Polygon, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { CRS } from 'leaflet'
 import ChunkGrid from './ChunkGrid'
-import { fromLatLng, roundPoint, type WorldPoint } from '../coords'
+import { fromLatLng, roundPoint, toLatLng, type WorldPoint } from '../coords'
+import { fetchClaims, WORLDS, type Claim, type WorldId } from '../api'
 
 /**
  * Keeps Leaflet's idea of the container size in step with reality.
@@ -38,6 +39,31 @@ function CursorTracker({ onMove }: { onMove: (point: WorldPoint | null) => void 
 
 export default function ClaimMap() {
   const [cursor, setCursor] = useState<WorldPoint | null>(null)
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [world, setWorld] = useState<WorldId>('world')
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchClaims()
+      .then((loaded) => {
+        if (!cancelled) setClaims(loaded)
+      })
+      .catch((cause: unknown) => {
+        // Surfaced on the map rather than only in the console — a silently
+        // empty map is indistinguishable from a server with no claims.
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Each dimension is its own coordinate space, so drawing them together would
+  // stack unrelated claims on the same spot (SDLC §2).
+  const visible = claims.filter((claim) => claim.world === world)
 
   return (
     <div className="map-shell">
@@ -56,7 +82,34 @@ export default function ClaimMap() {
         <KeepSizeInSync />
         <ChunkGrid />
         <CursorTracker onMove={setCursor} />
+
+        {visible.map((claim) => (
+          <Polygon
+            key={claim.id}
+            positions={claim.vertices.map(toLatLng)}
+            pathOptions={{ color: '#7cc47c', weight: 2, fillOpacity: 0.15 }}
+          >
+            {/* sticky: follows the cursor, so it reads the claim you're over
+                rather than the polygon's centre, which for a concave shape can
+                sit outside the claim entirely. */}
+            <Tooltip sticky>{claim.title}</Tooltip>
+          </Polygon>
+        ))}
       </MapContainer>
+
+      <div className="world-picker">
+        {WORLDS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={option.id === world ? 'active' : undefined}
+            onClick={() => setWorld(option.id)}
+          >
+            {option.label}
+            <span className="count">{claims.filter((c) => c.world === option.id).length}</span>
+          </button>
+        ))}
+      </div>
 
       {/*
         The readout is how 3.2 gets verified: hover a known landmark and these
@@ -72,6 +125,8 @@ export default function ClaimMap() {
           <span className="idle">move the cursor over the map</span>
         )}
       </div>
+
+      {error && <div className="error">could not load claims — {error}</div>}
     </div>
   )
 }
