@@ -105,7 +105,7 @@ class ClaimRoutes(
             return
         }
 
-        validator.validate(request.vertices)?.let { problem ->
+        validator.validate(request.vertices, store.load())?.let { problem ->
             ctx.fail(400, problem)
             return
         }
@@ -141,9 +141,9 @@ class ClaimRoutes(
             return
         }
 
-        // Checked before taking the lock: a bad shape is bad regardless of what
-        // is currently stored, so there is no reason to hold up other writers.
-        validator.validate(request.vertices)?.let { problem ->
+        // Excludes this claim's own stored outline, or every edit would be
+        // rejected for overlapping the shape it is replacing.
+        validator.validate(request.vertices, store.load(), excludeClaimId = id)?.let { problem ->
             ctx.fail(400, problem)
             return
         }

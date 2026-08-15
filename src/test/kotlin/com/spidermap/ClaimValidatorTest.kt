@@ -314,6 +314,309 @@ class ClaimValidatorTest {
         assertTrue("crosses itself" in error, "wrong rule reported first: $error")
     }
 
+    // ---- 2.4: overlap vs hug ------------------------------------------------
+
+    /** A claim occupying the axis-aligned box from (x1,z1) to (x2,z2). */
+    private fun boxClaim(
+        id: String,
+        title: String,
+        x1: Int,
+        z1: Int,
+        x2: Int,
+        z2: Int,
+        world: String = "world",
+    ) = Claim(
+        id = id,
+        title = title,
+        world = world,
+        createdByUuid = "eee00000-1111-2222-3333-444444444444",
+        vertices = listOf(Vertex(x1, z1), Vertex(x2, z1), Vertex(x2, z2), Vertex(x1, z2)),
+        createdAt = "2026-08-15T12:00:00Z",
+        updatedAt = "2026-08-15T12:00:00Z",
+    )
+
+    private fun box(x1: Int, z1: Int, x2: Int, z2: Int) =
+        listOf(Vertex(x1, z1), Vertex(x2, z1), Vertex(x2, z2), Vertex(x1, z2))
+
+    @Test
+    fun `(a) two claims sharing an edge are both accepted`() {
+        // The headline case. Neighbours hugging along x = 64 is expected and
+        // must not be mistaken for an overlap.
+        val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
+        val abutting = box(64, 0, 128, 64)
+
+        assertNull(
+            validator.validate(abutting, listOf(existing)),
+            "claims sharing a border were wrongly rejected as overlapping",
+        )
+    }
+
+    @Test
+    fun `(b) two claims with real interior overlap are rejected`() {
+        val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
+        val overlapping = box(32, 32, 96, 96)
+
+        val error = validator.validate(overlapping, listOf(existing))
+        assertNotNull(error)
+        assertTrue("overlaps" in error, "unhelpful message: $error")
+        assertTrue("Willowbrook Manor" in error, "the message should name the claim in the way: $error")
+    }
+
+    @Test
+    fun `(c) editing a claim is not rejected for overlapping itself`() {
+        val existing = boxClaim("being-edited", "Willowbrook Manor", 0, 0, 64, 64)
+
+        // Same footprint, nudged — overlaps its own stored shape heavily.
+        val edited = box(0, 0, 80, 64)
+
+        assertNull(
+            validator.validate(edited, listOf(existing), excludeClaimId = "being-edited"),
+            "a claim was rejected for overlapping its own previous outline",
+        )
+    }
+
+    @Test
+    fun `an edit still collides with other claims`() {
+        // The exclusion must be narrow: skipping *itself* cannot mean skipping
+        // the check entirely.
+        val self = boxClaim("being-edited", "Mine", 0, 0, 64, 64)
+        val neighbour = boxClaim("other", "Theirs", 128, 0, 192, 64)
+
+        val grownIntoNeighbour = box(0, 0, 160, 64)
+
+        val error = validator.validate(
+            grownIntoNeighbour,
+            listOf(self, neighbour),
+            excludeClaimId = "being-edited",
+        )
+        assertNotNull(error)
+        assertTrue("Theirs" in error, "wrong claim named: $error")
+    }
+
+    @Test
+    fun `claims touching at a single corner are accepted`() {
+        // Diagonal neighbours meeting at exactly one point: boundaries touch,
+        // interiors do not.
+        val existing = boxClaim("first", "Corner Neighbour", 0, 0, 64, 64)
+        val diagonal = box(64, 64, 128, 128)
+
+        assertNull(validator.validate(diagonal, listOf(existing)))
+    }
+
+    @Test
+    fun `a claim entirely inside another is rejected`() {
+        // Nested claims are out of scope for v1 (SDLC §2), and no edge is
+        // crossed here — only containment.
+        val existing = boxClaim("first", "Big Estate", 0, 0, 256, 256)
+        val inside = box(64, 64, 128, 128)
+
+        assertNotNull(validator.validate(inside, listOf(existing)))
+    }
+
+    @Test
+    fun `a claim entirely swallowing another is rejected`() {
+        val existing = boxClaim("first", "Small Plot", 64, 64, 128, 128)
+        val swallowing = box(0, 0, 256, 256)
+
+        assertNotNull(validator.validate(swallowing, listOf(existing)))
+    }
+
+    @Test
+    fun `overlapping by a single block is still an overlap`() {
+        // One block of shared ground, not a shared border.
+        val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
+        val barelyOver = box(63, 0, 128, 64)
+
+        assertNotNull(validator.validate(barelyOver, listOf(existing)))
+    }
+
+    @Test
+    fun `a claim in empty space is accepted`() {
+        val existing = boxClaim("first", "Far Away", 0, 0, 64, 64)
+        val elsewhere = box(1000, 1000, 1064, 1064)
+
+        assertNull(validator.validate(elsewhere, listOf(existing)))
+    }
+
+    @Test
+    fun `a concave claim nestling into another's notch is accepted`() {
+        // The hardest legitimate case: an L-shape and the square that fills its
+        // notch share two edges but no ground.
+        val lShape = Claim(
+            id = "l-shape",
+            title = "L Shape",
+            world = "world",
+            createdByUuid = "eee00000-1111-2222-3333-444444444444",
+            vertices = listOf(
+                Vertex(0, 0),
+                Vertex(64, 0),
+                Vertex(64, 32),
+                Vertex(32, 32),
+                Vertex(32, 64),
+                Vertex(0, 64),
+            ),
+            createdAt = "2026-08-15T12:00:00Z",
+            updatedAt = "2026-08-15T12:00:00Z",
+        )
+        val fillsTheNotch = box(32, 32, 64, 64)
+
+        assertNull(
+            validator.validate(fillsTheNotch, listOf(lShape)),
+            "a claim filling a neighbour's notch was wrongly rejected",
+        )
+    }
+
+    // ---- containment: no claim inside another (SDLC §2, nested claims are out) ----
+
+    @Test
+    fun `an identical claim is rejected`() {
+        val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
+
+        assertNotNull(
+            validator.validate(box(0, 0, 64, 64), listOf(existing)),
+            "an exact duplicate was accepted",
+        )
+    }
+
+    @Test
+    fun `a tiny claim deep inside a large one is rejected`() {
+        // Touches no edge at all — an edge-intersection check would miss this
+        // entirely, which is the reason containment needs testing separately.
+        val estate = boxClaim("first", "Big Estate", 0, 0, 512, 512)
+
+        assertNotNull(validator.validate(box(240, 240, 272, 272), listOf(estate)))
+    }
+
+    @Test
+    fun `a claim inside another but flush against one edge is rejected`() {
+        // Shares a border AND ground. The shared edge must not excuse the
+        // overlap — this is the case most likely to be waved through by a
+        // "do they touch?" implementation.
+        val estate = boxClaim("first", "Big Estate", 0, 0, 256, 256)
+
+        assertNotNull(validator.validate(box(0, 0, 64, 64), listOf(estate)))
+    }
+
+    @Test
+    fun `a claim inside another and flush against two edges is rejected`() {
+        // A corner pocket: two shared borders, still sitting on the estate's
+        // ground.
+        val estate = boxClaim("first", "Big Estate", 0, 0, 256, 256)
+
+        assertNotNull(validator.validate(box(192, 192, 256, 256), listOf(estate)))
+    }
+
+    @Test
+    fun `a claim inside a concave arm is rejected`() {
+        // Containment inside a non-convex shape. A convex-hull shortcut would
+        // get the L-shape's notch wrong; this sits in the solid arm.
+        val lShape = Claim(
+            id = "l-shape",
+            title = "L Shape",
+            world = "world",
+            createdByUuid = "eee00000-1111-2222-3333-444444444444",
+            vertices = listOf(
+                Vertex(0, 0),
+                Vertex(256, 0),
+                Vertex(256, 64),
+                Vertex(64, 64),
+                Vertex(64, 256),
+                Vertex(0, 256),
+            ),
+            createdAt = "2026-08-15T12:00:00Z",
+            updatedAt = "2026-08-15T12:00:00Z",
+        )
+
+        // Well inside the horizontal arm.
+        assertNotNull(validator.validate(box(128, 16, 160, 48), listOf(lShape)))
+    }
+
+    @Test
+    fun `a claim in a concave notch is still accepted`() {
+        // The counterpart to the test above: same L-shape, but this box sits in
+        // the empty notch rather than on the arm. Containment must not become
+        // "anything near a concave claim is rejected".
+        val lShape = Claim(
+            id = "l-shape",
+            title = "L Shape",
+            world = "world",
+            createdByUuid = "eee00000-1111-2222-3333-444444444444",
+            vertices = listOf(
+                Vertex(0, 0),
+                Vertex(256, 0),
+                Vertex(256, 64),
+                Vertex(64, 64),
+                Vertex(64, 256),
+                Vertex(0, 256),
+            ),
+            createdAt = "2026-08-15T12:00:00Z",
+            updatedAt = "2026-08-15T12:00:00Z",
+        )
+
+        assertNull(
+            validator.validate(box(128, 128, 192, 192), listOf(lShape)),
+            "a claim in the empty notch was wrongly rejected",
+        )
+    }
+
+    @Test
+    fun `containment is caught in either direction`() {
+        val small = boxClaim("small", "Small Plot", 64, 64, 128, 128)
+        val large = boxClaim("large", "Big Estate", 0, 0, 256, 256)
+
+        // New claim inside an existing one...
+        assertNotNull(validator.validate(box(80, 80, 112, 112), listOf(large)))
+        // ...and a new claim swallowing an existing one.
+        assertNotNull(validator.validate(box(0, 0, 256, 256), listOf(small)))
+    }
+
+    @Test
+    fun `containment is detected against any claim in the store, not just the first`() {
+        // The loop must keep looking. A claim landing inside the third of three
+        // is just as invalid as one inside the first.
+        val store = listOf(
+            boxClaim("a", "First", 0, 0, 64, 64),
+            boxClaim("b", "Second", 128, 0, 192, 64),
+            boxClaim("c", "Third", 256, 0, 512, 256),
+        )
+
+        val error = validator.validate(box(300, 50, 360, 110), store)
+        assertNotNull(error)
+        assertTrue("Third" in error, "wrong claim named: $error")
+    }
+
+    @Test
+    fun `an edit may not swallow a neighbour`() {
+        // Growing your own claim over someone else's is containment, not a
+        // border dispute, and the self-exclusion must not hide it.
+        val self = boxClaim("mine", "Mine", 0, 0, 64, 64)
+        val neighbour = boxClaim("theirs", "Theirs", 128, 128, 192, 192)
+
+        val error = validator.validate(
+            box(0, 0, 256, 256),
+            listOf(self, neighbour),
+            excludeClaimId = "mine",
+        )
+        assertNotNull(error)
+        assertTrue("Theirs" in error, "wrong claim named: $error")
+    }
+
+    @Test
+    fun `shape rules are checked before overlap`() {
+        // A two-point shape cannot be made into a valid polygon, so the count
+        // problem must be reported rather than a JTS failure surfacing.
+        val existing = boxClaim("first", "Willowbrook Manor", 0, 0, 64, 64)
+
+        val error = validator.validate(listOf(Vertex(0, 0), Vertex(64, 64)), listOf(existing))
+        assertNotNull(error)
+        assertTrue("at least 3" in error, "wrong rule reported first: $error")
+    }
+
+    @Test
+    fun `an empty store never reports an overlap`() {
+        assertNull(validator.validate(box(0, 0, 64, 64), emptyList()))
+    }
+
     private companion object {
         /** Matches the config.yml default, so the tests mirror a real server. */
         const val DEFAULT_CAP = 50

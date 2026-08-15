@@ -1,5 +1,9 @@
 package com.spidermap
 
+import org.locationtech.jts.geom.Coordinate
+import org.locationtech.jts.geom.GeometryFactory
+import org.locationtech.jts.geom.Polygon
+
 /**
  * Geometry rules a claim must satisfy before it can be saved (SDLC §2).
  *
@@ -11,22 +15,95 @@ package com.spidermap
  */
 class ClaimValidator(private val vertexCap: Int) {
 
-    fun validate(vertices: List<Vertex>): String? = when {
-        vertices.size < MINIMUM_VERTICES ->
-            "a claim needs at least $MINIMUM_VERTICES points, but this one has ${vertices.size}"
+    /**
+     * @param existingClaims every claim already stored, for the overlap check.
+     * @param excludeClaimId the claim being edited. Its stored shape is skipped,
+     *   or every edit would be rejected for overlapping its own old outline.
+     */
+    fun validate(
+        vertices: List<Vertex>,
+        existingClaims: List<Claim> = emptyList(),
+        excludeClaimId: String? = null,
+    ): String? {
+        // Shape rules first. They are cheap, and a self-intersecting outline
+        // would make an invalid JTS polygon whose overlap results are
+        // meaningless — so this ordering is load-bearing, not cosmetic.
+        val shapeProblem = when {
+            vertices.size < MINIMUM_VERTICES ->
+                "a claim needs at least $MINIMUM_VERTICES points, but this one has ${vertices.size}"
 
-        vertices.size > vertexCap ->
-            "a claim can have at most $vertexCap points, but this one has ${vertices.size}"
+            vertices.size > vertexCap ->
+                "a claim can have at most $vertexCap points, but this one has ${vertices.size}"
 
-        selfIntersects(vertices) ->
-            "the outline crosses itself — a claim has to be a simple shape, " +
-                "so move the points so no two edges overlap"
+            selfIntersects(vertices) ->
+                "the outline crosses itself — a claim has to be a simple shape, " +
+                    "so move the points so no two edges overlap"
 
-        doubledArea(vertices) < MINIMUM_DOUBLED_AREA ->
-            "this claim is too small or too thin to cover any ground — " +
-                "it needs to enclose at least $MINIMUM_AREA square blocks"
+            doubledArea(vertices) < MINIMUM_DOUBLED_AREA ->
+                "this claim is too small or too thin to cover any ground — " +
+                    "it needs to enclose at least $MINIMUM_AREA square blocks"
 
-        else -> null
+            else -> null
+        }
+        if (shapeProblem != null) return shapeProblem
+
+        return overlapProblem(vertices, existingClaims, excludeClaimId)
+    }
+
+    /**
+     * Claims may hug but not overlap (SDLC §2). Sharing an edge or a corner
+     * with a neighbour is expected and fine; sharing actual ground is not.
+     *
+     * A hard reject, deliberately — there is no merge, partial save or
+     * conflict-resolution flow to fall back on.
+     */
+    private fun overlapProblem(
+        vertices: List<Vertex>,
+        existingClaims: List<Claim>,
+        excludeClaimId: String?,
+    ): String? {
+        if (existingClaims.isEmpty()) return null
+
+        val candidate = toPolygon(vertices)
+
+        for (existing in existingClaims) {
+            if (existing.id == excludeClaimId) continue
+            if (existing.vertices.size < MINIMUM_VERTICES) continue
+
+            if (sharesGround(candidate, toPolygon(existing.vertices))) {
+                return "this claim overlaps \"${existing.title}\" — " +
+                    "claims can share a border, but not the same ground"
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * True when the two polygons' *interiors* intersect.
+     *
+     * `"T********"` is a DE-9IM pattern reading "interior-to-interior
+     * intersection is non-empty". That is exactly the question worth asking:
+     * two claims sharing only an edge have touching boundaries but disjoint
+     * interiors, so this is false for them and true for any real overlap,
+     * including one claim entirely inside another.
+     *
+     * `intersects` would be wrong here — it is true for boundary touching,
+     * which is the case being permitted.
+     */
+    private fun sharesGround(a: Polygon, b: Polygon): Boolean =
+        a.relate(b, "T********")
+
+    /**
+     * JTS wants an explicitly closed ring, so the first corner is repeated at
+     * the end. Coordinates are exact whole numbers, so the conversion to double
+     * is lossless well beyond the world border.
+     */
+    private fun toPolygon(vertices: List<Vertex>): Polygon {
+        val ring = vertices.map { Coordinate(it.x.toDouble(), it.z.toDouble()) } +
+            Coordinate(vertices.first().x.toDouble(), vertices.first().z.toDouble())
+
+        return geometryFactory.createPolygon(ring.toTypedArray())
     }
 
     /**
@@ -118,6 +195,9 @@ class ClaimValidator(private val vertexCap: Int) {
     private fun within(a: Vertex, b: Vertex, p: Vertex): Boolean =
         p.x in minOf(a.x, b.x)..maxOf(a.x, b.x) &&
             p.z in minOf(a.z, b.z)..maxOf(a.z, b.z)
+
+    /** Stateless and thread-safe for reads; one instance is enough. */
+    private val geometryFactory = GeometryFactory()
 
     private companion object {
         /**

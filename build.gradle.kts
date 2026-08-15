@@ -30,6 +30,11 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
+    // Polygon geometry. Used only to tell "these claims share a boundary"
+    // (allowed) from "these claims share actual ground" (rejected) — a
+    // distinction SDLC §3 specifically warns against hand-rolling.
+    implementation("org.locationtech.jts:jts-core:1.20.0")
+
     testImplementation(kotlin("test"))
 }
 
