@@ -90,6 +90,137 @@ class ClaimValidatorTest {
         assertTrue("has 2" in error, "message should say how many were given: $error")
     }
 
+    // ---- 2.2: self-intersection --------------------------------------------
+
+    @Test
+    fun `rejects the classic bowtie`() {
+        // Corners visited in an order that makes the two edges cross:
+        // bottom-left, top-right, bottom-right, top-left.
+        val bowtie = listOf(
+            Vertex(0, 0),
+            Vertex(64, 64),
+            Vertex(64, 0),
+            Vertex(0, 64),
+        )
+
+        val error = validator.validate(bowtie)
+        assertNotNull(error)
+        assertTrue("crosses itself" in error, "unhelpful message: $error")
+    }
+
+    @Test
+    fun `accepts a plain square`() {
+        assertNull(
+            validator.validate(
+                listOf(Vertex(0, 0), Vertex(64, 0), Vertex(64, 64), Vertex(0, 64)),
+            )
+        )
+    }
+
+    @Test
+    fun `accepts a concave L shape`() {
+        // The check must not be "is this convex" — most real claims hug terrain
+        // and are concave.
+        val lShape = listOf(
+            Vertex(0, 0),
+            Vertex(64, 0),
+            Vertex(64, 32),
+            Vertex(32, 32),
+            Vertex(32, 64),
+            Vertex(0, 64),
+        )
+
+        assertNull(validator.validate(lShape), "a concave shape was wrongly rejected")
+    }
+
+    @Test
+    fun `accepts a deeply concave comb`() {
+        // Several inward spikes: plenty of reflex corners, still no crossing.
+        val comb = listOf(
+            Vertex(0, 0),
+            Vertex(96, 0),
+            Vertex(96, 64),
+            Vertex(80, 64),
+            Vertex(80, 16),
+            Vertex(64, 16),
+            Vertex(64, 64),
+            Vertex(48, 64),
+            Vertex(48, 16),
+            Vertex(32, 16),
+            Vertex(32, 64),
+            Vertex(0, 64),
+        )
+
+        assertNull(validator.validate(comb), "a concave comb was wrongly rejected")
+    }
+
+    @Test
+    fun `rejects a shape whose edge clips a far corner`() {
+        // No clean X crossing — one edge merely passes through another's
+        // endpoint. Still leaves the polygon without a coherent inside.
+        val touching = listOf(
+            Vertex(0, 0),
+            Vertex(64, 0),
+            Vertex(32, 32),
+            Vertex(64, 64),
+            Vertex(0, 64),
+            Vertex(32, 32),
+        )
+
+        assertNotNull(validator.validate(touching))
+    }
+
+    @Test
+    fun `accepts a triangle`() {
+        assertNull(validator.validate(listOf(Vertex(0, 0), Vertex(64, 0), Vertex(32, 64))))
+    }
+
+    @Test
+    fun `accepts a chunk aligned claim at real world coordinates`() {
+        // The schema example from SDLC §4, at coordinates a server would use.
+        assertNull(
+            validator.validate(
+                listOf(Vertex(128, -64), Vertex(144, -64), Vertex(144, -48), Vertex(128, -48)),
+            )
+        )
+    }
+
+    @Test
+    fun `detects crossings far from the origin without integer overflow`() {
+        // Near the world border. With Int arithmetic the cross product
+        // overflows, flips sign, and reports the wrong answer.
+        val far = 30_000_000
+        val bowtie = listOf(
+            Vertex(-far, -far),
+            Vertex(far, far),
+            Vertex(far, -far),
+            Vertex(-far, far),
+        )
+
+        assertNotNull(validator.validate(bowtie), "overflow hid a real crossing")
+    }
+
+    @Test
+    fun `a huge valid claim near the world border is still accepted`() {
+        val far = 30_000_000
+        val square = listOf(
+            Vertex(-far, -far),
+            Vertex(far, -far),
+            Vertex(far, far),
+            Vertex(-far, far),
+        )
+
+        assertNull(validator.validate(square), "overflow invented a crossing")
+    }
+
+    @Test
+    fun `vertex count is checked before self-intersection`() {
+        // Two points cannot self-intersect; the count message is the useful one.
+        val error = validator.validate(listOf(Vertex(0, 0), Vertex(64, 64)))
+        assertNotNull(error)
+        assertTrue("at least 3" in error, "wrong rule reported first: $error")
+    }
+
     private companion object {
         /** Matches the config.yml default, so the tests mirror a real server. */
         const val DEFAULT_CAP = 50
