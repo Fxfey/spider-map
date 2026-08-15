@@ -1,0 +1,6 @@
+name: SpiderMap
+version: '${version}'
+main: com.spidermap.landclaims.LandClaimsPlugin
+api-version: '26.2'
+description: Draw and manage land claims from a web UI.
+website: https://github.com/
