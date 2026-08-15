@@ -66,7 +66,10 @@ data class UpdateClaimRequest(
  * No validation here beyond "is this parseable": vertex counts, self-
  * intersection, minimum area and overlap each get their own step in Milestone 2.
  */
-class ClaimRoutes(private val store: ClaimStore) {
+class ClaimRoutes(
+    private val store: ClaimStore,
+    private val validator: ClaimValidator,
+) {
 
     fun register(routes: RoutesConfig) {
         routes.get("/api/claims") { ctx -> listClaims(ctx) }
@@ -102,6 +105,11 @@ class ClaimRoutes(private val store: ClaimStore) {
             return
         }
 
+        validator.validate(request.vertices)?.let { problem ->
+            ctx.fail(400, problem)
+            return
+        }
+
         val now = timestamp()
         val claim = Claim(
             id = UUID.randomUUID().toString(),
@@ -130,6 +138,13 @@ class ClaimRoutes(private val store: ClaimStore) {
             json.decodeFromString(UpdateClaimRequest.serializer(), ctx.body())
         } catch (e: SerializationException) {
             ctx.fail(400, "malformed request body: ${e.message}")
+            return
+        }
+
+        // Checked before taking the lock: a bad shape is bad regardless of what
+        // is currently stored, so there is no reason to hold up other writers.
+        validator.validate(request.vertices)?.let { problem ->
+            ctx.fail(400, problem)
             return
         }
 

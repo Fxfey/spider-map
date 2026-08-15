@@ -19,7 +19,10 @@ class SpiderMapPlugin : JavaPlugin() {
             webServer = WebServer(
                 logger = componentLogger,
                 port = pluginConfig.webPort,
-                claimRoutes = ClaimRoutes(claimStore),
+                claimRoutes = ClaimRoutes(
+                    store = claimStore,
+                    validator = ClaimValidator(vertexCap = pluginConfig.vertexCap),
+                ),
             ).apply { start() }
         } catch (e: Exception) {
             // A bound port would otherwise leave the plugin "enabled" but with
