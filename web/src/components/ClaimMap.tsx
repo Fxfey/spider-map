@@ -47,9 +47,11 @@ export default function ClaimMap() {
   // 4.1 only reports what was drawn; 4.6 sends it to the API.
   const [drawn, setDrawn] = useState<WorldPoint[] | null>(null)
   const [placedCount, setPlacedCount] = useState(0)
+  const [drawProblem, setDrawProblem] = useState<string | null>(null)
   // Filled by the drawer while a session is live. Held in a ref because the
   // drawing session lives inside Leaflet, below this component.
   const undoRef = useRef<(() => void) | null>(null)
+  const finishRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -93,7 +95,9 @@ export default function ClaimMap() {
         <ClaimDrawer
           active={drawing}
           undoRef={undoRef}
+          finishRef={finishRef}
           onProgress={setPlacedCount}
+          onProblem={setDrawProblem}
           onComplete={(vertices) => {
             setDrawn(vertices)
             setDrawing(false)
@@ -166,6 +170,15 @@ export default function ClaimMap() {
             >
               Undo
             </button>
+            <button
+              type="button"
+              // Three corners is the fewest that enclose any area, so below
+              // that there is nothing to close.
+              disabled={placedCount < 3}
+              onClick={() => finishRef.current?.()}
+            >
+              Close shape
+            </button>
             <span className="hint">
               {placedCount} placed — click the first point to close, right-click to undo
             </span>
@@ -213,6 +226,8 @@ export default function ClaimMap() {
           <span className="idle">move the cursor over the map</span>
         )}
       </div>
+
+      {drawProblem && <div className="error draw-problem">{drawProblem}</div>}
 
       {error && <div className="error">could not load claims — {error}</div>}
     </div>

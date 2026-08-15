@@ -192,6 +192,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Below the draw bar, so it doesn't cover the buttons it refers to. */
+.draw-problem {
+  top: 56px;
+  max-width: 42ch;
+  line-height: 1.4;
+}
+
 .error {
   position: absolute;
   left: 12px;

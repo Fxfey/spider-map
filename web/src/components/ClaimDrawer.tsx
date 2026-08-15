@@ -10,8 +10,12 @@ interface ClaimDrawerProps {
   onComplete: (vertices: WorldPoint[]) => void
   /** How many corners are placed so far, so the toolbar can enable Undo. */
   onProgress: (placedCount: number) => void
+  /** Set when closing is refused, cleared when drawing continues. */
+  onProblem: (message: string | null) => void
   /** Filled with an undo function while drawing, cleared when it stops. */
   undoRef: RefObject<(() => void) | null>
+  /** Filled with a "close the shape" function while drawing. */
+  finishRef: RefObject<(() => void) | null>
 }
 
 /**
@@ -30,6 +34,7 @@ interface GeomanPolygonDraw {
   /** One per placed corner. */
   _markers?: unknown[]
   _removeLastVertex?: () => void
+  _finishShape?: () => void
 }
 
 /**
@@ -38,7 +43,14 @@ interface GeomanPolygonDraw {
  * Geoman's own toolbar is never added — drawing is driven entirely by our own
  * button, so the map keeps one visual language.
  */
-export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }: ClaimDrawerProps) {
+export default function ClaimDrawer({
+  active,
+  onComplete,
+  onProgress,
+  onProblem,
+  undoRef,
+  finishRef,
+}: ClaimDrawerProps) {
   const map = useMap()
 
   /**
@@ -54,15 +66,19 @@ export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }:
    */
   const onCompleteRef = useRef(onComplete)
   const onProgressRef = useRef(onProgress)
+  const onProblemRef = useRef(onProblem)
   useEffect(() => {
     onCompleteRef.current = onComplete
     onProgressRef.current = onProgress
-  }, [onComplete, onProgress])
+    onProblemRef.current = onProblem
+  }, [onComplete, onProgress, onProblem])
 
   useEffect(() => {
     if (!active) {
       undoRef.current = null
+      finishRef.current = null
       onProgressRef.current(0)
+      onProblemRef.current(null)
       return
     }
 
@@ -73,6 +89,13 @@ export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }:
       // Geoman's snapping is to *other layers*, which is not what SDLC §2 asks
       // for. The grid and angle rules are applied by hand below.
       snappable: false,
+      // A bowtie has no coherent inside, so the point-in-polygon test the
+      // announcements depend on would give arbitrary answers (SDLC §2). The
+      // server rejects these anyway, but refusing to *close* a crossing shape
+      // means the outline never gets drawn rather than being drawn, submitted
+      // and bounced back — the crossing edge is visible while you're placing
+      // it, so the feedback lands where the mistake is made.
+      allowSelfIntersection: false,
       templineStyle: { color: '#7cc47c', weight: 2 },
       hintlineStyle: { color: '#7cc47c', weight: 2, dashArray: '4 4' },
       // finishOn is deliberately left at its default of null. Setting it to
@@ -115,7 +138,14 @@ export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }:
 
     const reportProgress = () => onProgressRef.current(placedCount())
 
+    // Set by pm:create, read straight after _finishShape to tell "it closed"
+    // from "Geoman refused". The refusal is a silent early return, and
+    // pm:intersect fires on the working layer with propagate = false, so there
+    // is no event on the map to listen for.
+    let closed = false
+
     const handleCreate = (event: { layer: Layer }) => {
+      closed = true
       const polygon = event.layer as LeafletPolygon
       const ring = (polygon.getLatLngs()[0] ?? []) as LatLng[]
 
@@ -159,7 +189,36 @@ export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }:
     map.on('click', reportProgress)
     map.on('mousemove', reportProgress)
 
+    // Any further drawing clears a stale complaint — the shape has changed, so
+    // the old message may no longer be true.
+    const clearProblem = () => onProblemRef.current(null)
+    map.on('click', clearProblem)
+
+    /**
+     * Closes the shape without needing to hit the first corner exactly.
+     *
+     * Calls the same `_finishShape` that clicking the first marker triggers,
+     * so both routes produce an identical result rather than two code paths
+     * that could drift. Geoman already refuses below three corners
+     * (`coords.length <= 2` returns early); the button is disabled there too,
+     * so the refusal is visible rather than a dead click.
+     */
+    const finish = () => {
+      if (placedCount() < 3) return
+
+      closed = false
+      draw()._finishShape?.()
+
+      if (!closed) {
+        onProblemRef.current(
+          'the outline crosses itself — a claim has to be a simple shape, ' +
+            'so move the last point until the guide line is no longer red',
+        )
+      }
+    }
+
     undoRef.current = undo
+    finishRef.current = finish
     reportProgress()
 
     return () => {
@@ -168,10 +227,12 @@ export default function ClaimDrawer({ active, onComplete, onProgress, undoRef }:
       map.off('contextmenu', handleContextMenu)
       map.off('click', reportProgress)
       map.off('mousemove', reportProgress)
+      map.off('click', clearProblem)
       undoRef.current = null
+      finishRef.current = null
       map.pm.disableDraw()
     }
-  }, [active, map, undoRef])
+  }, [active, map, undoRef, finishRef])
 
   return null
 }
