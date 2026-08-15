@@ -49,3 +49,72 @@ export function snapToGrid({ x, z }: WorldPoint, grid: number = CHUNK_SIZE): Wor
     z: Math.round(z / grid) * grid,
   }
 }
+
+/** The eight directions a claim edge may run: four axis-aligned, four diagonal. */
+const DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+]
+
+/**
+ * Snaps a point so the edge from [previous] runs at a multiple of 45°, with
+ * both coordinates still on the chunk grid.
+ *
+ * **Deviates from SDLC §5, deliberately.** That formula snaps the *distance*
+ * from the previous point to a multiple of 16 and the *angle* to 45°. Those two
+ * rules cannot both hold on a diagonal: a 45° step of length 16 has components
+ * of 16/√2 ≈ 11.31 — off-grid and fractional. §2 states the intent plainly,
+ * that "diagonal steps of equal X/Z stay on-grid", and §7's chunk-index
+ * optimisation depends on it; §5's formula simply fails to express that.
+ *
+ * So the *components* are snapped rather than the distance. A diagonal step is
+ * 16 blocks on each axis — 16√2 ≈ 22.6 blocks of travel — instead of 16.
+ * Visually identical, and every vertex stays on a chunk corner.
+ *
+ * Works by generating the nearest on-grid point along each of the eight legal
+ * directions and keeping whichever lands closest to the cursor, rather than
+ * snapping an angle and hoping the result is on-grid.
+ */
+export function snapFromPrevious(
+  target: WorldPoint,
+  previous: WorldPoint | null,
+  grid: number = CHUNK_SIZE,
+): WorldPoint {
+  // The first corner has no edge leading to it, so there is no angle to honour.
+  if (!previous) return snapToGrid(target, grid)
+
+  const dx = target.x - previous.x
+  const dz = target.z - previous.z
+
+  let best: WorldPoint | null = null
+  let bestDistance = Infinity
+
+  for (const [ux, uz] of DIRECTIONS) {
+    // How far along this direction the cursor sits, in grid steps. The divisor
+    // is |u|² — 1 for axis moves, 2 for diagonals.
+    const projection = (dx * ux + dz * uz) / (ux * ux + uz * uz)
+
+    // At least one step: a zero-length edge would put two corners on the same
+    // spot, which is a degenerate shape the server would reject anyway.
+    const steps = Math.max(1, Math.round(projection / grid))
+
+    const candidate: WorldPoint = {
+      x: previous.x + ux * steps * grid,
+      z: previous.z + uz * steps * grid,
+    }
+
+    const distance = (candidate.x - target.x) ** 2 + (candidate.z - target.z) ** 2
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = candidate
+    }
+  }
+
+  return best ?? snapToGrid(target, grid)
+}

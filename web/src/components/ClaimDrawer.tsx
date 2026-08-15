@@ -3,7 +3,7 @@ import { useMap } from 'react-leaflet'
 import type { LatLng, LeafletMouseEvent, Layer, Marker, Polygon as LeafletPolygon } from 'leaflet'
 import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
-import { fromLatLng, snapToGrid, toLatLng, type WorldPoint } from '../coords'
+import { fromLatLng, snapFromPrevious, toLatLng, type WorldPoint } from '../coords'
 
 interface ClaimDrawerProps {
   active: boolean
@@ -21,6 +21,8 @@ interface ClaimDrawerProps {
 interface GeomanPolygonDraw {
   _hintMarker?: Marker & { _snapped?: boolean }
   _syncHintLine?: () => void
+  /** The in-progress outline. Its last point is the corner we snap against. */
+  _layer?: { getLatLngs: () => LatLng[] }
 }
 
 /**
@@ -80,7 +82,14 @@ export default function ClaimDrawer({ active, onComplete }: ClaimDrawerProps) {
       const hint = draw._hintMarker
       if (!hint) return
 
-      const snapped = snapToGrid(fromLatLng(event.latlng.lat, event.latlng.lng))
+      // The corner already placed, which the new edge runs from. Absent for the
+      // very first point, where there is no angle to honour.
+      const placed = draw._layer?.getLatLngs() ?? []
+      const last = placed.length > 0 ? placed[placed.length - 1] : undefined
+      const previous = last ? fromLatLng(last.lat, last.lng) : null
+
+      const cursor = fromLatLng(event.latlng.lat, event.latlng.lng)
+      const snapped = snapFromPrevious(cursor, previous)
       hint.setLatLng(toLatLng(snapped))
       hint._snapped = true
 

@@ -83,6 +83,24 @@ val buildWeb = tasks.register<Exec>("buildWeb") {
     outputs.dir(webDist)
 }
 
+val testWeb = tasks.register<Exec>("testWeb") {
+    description = "Runs the web UI's unit tests."
+    dependsOn(npmInstall)
+    workingDir = webDir.asFile
+    commandLine(npm, "run", "test")
+
+    inputs.dir(webDir.dir("src"))
+    // No meaningful output file, so Gradle would otherwise cache this as
+    // up-to-date forever and stop running the tests at all.
+    outputs.upToDateWhen { false }
+}
+
+// Frontend tests run as part of `check`, alongside the Kotlin ones — otherwise
+// they only run when someone remembers to, which is the same as not having them.
+tasks.check {
+    dependsOn(testWeb)
+}
+
 tasks.processResources {
     // Lets plugin.yml carry the version from one place instead of duplicating it.
     val props = mapOf("version" to project.version.toString())
