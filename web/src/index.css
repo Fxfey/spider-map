@@ -6,35 +6,68 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
   font-family: system-ui, sans-serif;
   background: #1a1a1a;
   color: #e0e0e0;
 }
 
-#root {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.map-shell {
+  position: relative;
+  height: 100%;
 }
 
-main {
-  text-align: center;
+.map {
+  height: 100%;
+  width: 100%;
+  /* Leaflet paints its own container; without this the void reads as white. */
+  background: #141414;
+  outline: none;
 }
 
-h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.75rem;
+/* Leaflet's default controls are light-themed and glare against the grid. */
+.leaflet-control-zoom a {
+  background: #262626;
+  color: #e0e0e0;
+  border-color: #333;
 }
 
-p {
-  margin: 0 0 0.25rem;
-  color: #9a9a9a;
+.leaflet-control-zoom a:hover {
+  background: #333;
+  color: #fff;
 }
 
-.hint code {
+.readout {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.85);
+  border: 1px solid #333;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.readout .axis {
   color: #7cc47c;
+  margin-right: 4px;
+  margin-left: 10px;
+}
+
+.readout .axis:first-child {
+  margin-left: 0;
+}
+
+.readout .idle {
+  color: #777;
 }
