@@ -4,7 +4,7 @@ import { CRS } from 'leaflet'
 import ChunkGrid from './ChunkGrid'
 import ClaimDrawer from './ClaimDrawer'
 import { fromLatLng, roundPoint, toLatLng, type WorldPoint } from '../coords'
-import { fetchClaims, WORLDS, type Claim, type WorldId } from '../api'
+import { createClaim, fetchClaims, WORLDS, type Claim, type WorldId } from '../api'
 
 /**
  * Keeps Leaflet's idea of the container size in step with reality.
@@ -48,6 +48,8 @@ export default function ClaimMap() {
   const [drawn, setDrawn] = useState<WorldPoint[] | null>(null)
   const [placedCount, setPlacedCount] = useState(0)
   const [drawProblem, setDrawProblem] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
   // Filled by the drawer while a session is live. Held in a ref because the
   // drawing session lives inside Leaflet, below this component.
   const undoRef = useRef<(() => void) | null>(null)
@@ -74,6 +76,36 @@ export default function ClaimMap() {
   // Each dimension is its own coordinate space, so drawing them together would
   // stack unrelated claims on the same spot (SDLC §2).
   const visible = claims.filter((claim) => claim.world === world)
+
+  const discard = () => {
+    setDrawn(null)
+    setTitle('')
+    setDrawProblem(null)
+  }
+
+  const save = async () => {
+    if (!drawn || saving) return
+
+    setSaving(true)
+    setDrawProblem(null)
+
+    try {
+      // Drawn into whichever world is on screen — there is no way to place a
+      // claim in a dimension you aren't looking at.
+      await createClaim({ title: title.trim(), world, vertices: drawn })
+
+      // Re-read rather than appending the response: the server owns id,
+      // version and timestamps, and a refetch cannot drift from what's stored.
+      setClaims(await fetchClaims())
+      discard()
+    } catch (cause: unknown) {
+      // The server's own sentence, shown as written (SDLC §2's rejections are
+      // phrased for whoever drew the claim).
+      setDrawProblem(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="map-shell">
@@ -187,11 +219,24 @@ export default function ClaimMap() {
 
         {drawn && (
           <>
-            <span className="drawn">
-              {drawn.length} points:{' '}
-              {drawn.map((point) => `${point.x},${point.z}`).join('  ')}
-            </span>
-            <button type="button" onClick={() => setDrawn(null)}>
+            <span className="drawn">{drawn.length} points</span>
+            <input
+              className="title-input"
+              type="text"
+              placeholder="Claim name"
+              value={title}
+              autoFocus
+              disabled={saving}
+              onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void save()
+                if (event.key === 'Escape') discard()
+              }}
+            />
+            <button type="button" disabled={saving || title.trim().length === 0} onClick={() => void save()}>
+              {saving ? 'Saving…' : 'Save claim'}
+            </button>
+            <button type="button" disabled={saving} onClick={discard}>
               Discard
             </button>
           </>

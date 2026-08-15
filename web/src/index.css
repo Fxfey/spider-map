@@ -192,6 +192,26 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.draw-bar .title-input {
+  padding: 7px 10px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.9);
+  color: #e0e0e0;
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 18ch;
+}
+
+.draw-bar .title-input:focus {
+  outline: none;
+  border-color: #3d5a3d;
+}
+
+.draw-bar .title-input:disabled {
+  opacity: 0.5;
+}
+
 /* Below the draw bar, so it doesn't cover the buttons it refers to. */
 .draw-problem {
   top: 56px;
