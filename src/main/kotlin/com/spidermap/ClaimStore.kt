@@ -30,6 +30,20 @@ class ClaimStore(private val file: Path) {
     }
 
     /**
+     * Read, transform, write — all under one lock.
+     *
+     * Javalin serves requests from a thread pool, so two concurrent creates
+     * that each did `load()` then `save()` would interleave and silently drop
+     * one of the claims. Every mutating endpoint goes through here.
+     */
+    @Synchronized
+    fun update(transform: (List<Claim>) -> List<Claim>): List<Claim> {
+        val updated = transform(load())
+        save(updated)
+        return updated
+    }
+
+    /**
      * Writes to a temp file in the same directory, then renames it over the
      * target. The rename is the only operation that touches [file], and it
      * either happens or it doesn't — so a crash mid-write leaves the previous
