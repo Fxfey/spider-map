@@ -1,0 +1,24 @@
+# spider-map configuration
+#
+# This file is written on first run. Edit it and restart the server to apply
+# changes; nothing here is read again while the server is up.
+
+# Port for the embedded web server, which serves both the map UI and the REST
+# API from the same origin (so the browser never needs CORS).
+web-port: 8080
+
+# Claim storage file, relative to this plugin's folder
+# (plugins/spider-map/). Written atomically, so it is safe to back up while
+# the server is running.
+claims-file: claims.json
+
+# Maximum number of vertices a single claim may have.
+vertex-cap: 50
+
+# Grid size that claim corners snap to, in blocks. 16 is one chunk.
+#
+# Leave this at 16 unless you know what you are changing. Chunk-aligned claims
+# are what let the plugin check a player's position by looking up their current
+# chunk, instead of testing every claim on every move. A value that is not a
+# factor of 16 breaks that assumption.
+chunk-snap-size: 16
