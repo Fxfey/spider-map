@@ -39,8 +39,28 @@ data class CreateClaimRequest(
 )
 
 /**
+ * Body of `PUT /api/claims/{id}`.
+ *
+ * `world` is absent deliberately: SDLC §5 allows updating "title, owner, and/or
+ * vertices", and moving a claim between dimensions is a different operation
+ * from editing one.
+ */
+@Serializable
+data class UpdateClaimRequest(
+    val title: String,
+    val vertices: List<Vertex>,
+    /**
+     * The version the client loaded. Required — a client that cannot say what
+     * it was editing cannot be allowed to overwrite someone else's edit.
+     */
+    val version: Int,
+    @SerialName("owner_uuid") val ownerUuid: String? = null,
+    @SerialName("owner_name") val ownerName: String? = null,
+)
+
+/**
  * Claim endpoints. Reads are public — anyone with the URL can view the map
- * without logging in (SDLC §2). The write below is unauthenticated only until
+ * without logging in (SDLC §2). The writes below are unauthenticated only until
  * 5.4 adds session middleware.
  *
  * No validation here beyond "is this parseable": vertex counts, self-
@@ -52,6 +72,8 @@ class ClaimRoutes(private val store: ClaimStore) {
         routes.get("/api/claims") { ctx -> listClaims(ctx) }
         routes.get("/api/claims/{id}") { ctx -> getClaim(ctx) }
         routes.post("/api/claims") { ctx -> createClaim(ctx) }
+        routes.put("/api/claims/{id}") { ctx -> updateClaim(ctx) }
+        routes.delete("/api/claims/{id}") { ctx -> deleteClaim(ctx) }
     }
 
     private fun listClaims(ctx: Context) {
@@ -99,6 +121,81 @@ class ClaimRoutes(private val store: ClaimStore) {
         store.update { existing -> existing + claim }
 
         ctx.status(201).jsonResult(json.encodeToString(Claim.serializer(), claim))
+    }
+
+    private fun updateClaim(ctx: Context) {
+        val id = ctx.pathParam("id")
+
+        val request = try {
+            json.decodeFromString(UpdateClaimRequest.serializer(), ctx.body())
+        } catch (e: SerializationException) {
+            ctx.fail(400, "malformed request body: ${e.message}")
+            return
+        }
+
+        // The lookup, the version check and the write have to happen under one
+        // lock, or two editors could both read version 3 and both save version
+        // 4 — which is the exact race the version field exists to stop.
+        var rejection: Pair<Int, String>? = null
+        var saved: Claim? = null
+
+        store.update { claims ->
+            val existing = claims.firstOrNull { it.id == id }
+
+            when {
+                existing == null -> {
+                    rejection = 404 to "no claim with id '$id'"
+                    claims
+                }
+
+                existing.version != request.version -> {
+                    rejection = 409 to
+                        "claim changed since you loaded it " +
+                        "(you have version ${request.version}, current is ${existing.version}) " +
+                        "— reload and retry"
+                    claims
+                }
+
+                else -> {
+                    val next = existing.copy(
+                        title = request.title,
+                        ownerUuid = request.ownerUuid,
+                        ownerName = request.ownerName,
+                        vertices = request.vertices,
+                        version = existing.version + 1,
+                        updatedAt = timestamp(),
+                    )
+                    saved = next
+                    claims.map { if (it.id == id) next else it }
+                }
+            }
+        }
+
+        rejection?.let { (code, message) ->
+            ctx.fail(code, message)
+            return
+        }
+
+        ctx.jsonResult(json.encodeToString(Claim.serializer(), saved!!))
+    }
+
+    private fun deleteClaim(ctx: Context) {
+        val id = ctx.pathParam("id")
+        var existed = false
+
+        store.update { claims ->
+            val remaining = claims.filterNot { it.id == id }
+            existed = remaining.size != claims.size
+            if (existed) remaining else claims
+        }
+
+        if (!existed) {
+            ctx.fail(404, "no claim with id '$id'")
+            return
+        }
+
+        // 204: succeeded, and there is deliberately nothing to return.
+        ctx.status(204)
     }
 
     private fun Context.jsonResult(body: String): Context =

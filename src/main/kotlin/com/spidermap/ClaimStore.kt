@@ -38,8 +38,13 @@ class ClaimStore(private val file: Path) {
      */
     @Synchronized
     fun update(transform: (List<Claim>) -> List<Claim>): List<Claim> {
-        val updated = transform(load())
-        save(updated)
+        val current = load()
+        val updated = transform(current)
+
+        // Returning the list it was handed means "nothing to do" — a rejected
+        // update shouldn't rewrite the file just to store identical content.
+        if (updated !== current) save(updated)
+
         return updated
     }
 
