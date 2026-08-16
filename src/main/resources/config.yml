@@ -15,6 +15,21 @@ claims-file: claims.json
 # Maximum number of vertices a single claim may have.
 vertex-cap: 50
 
+# How long a /claims weblogin code stays valid, in seconds.
+#
+# Short on purpose. The code is a credential typed into a browser, so the
+# window only needs to cover reading it off chat and retyping it. Codes are
+# also single-use, and running the command again replaces the previous one.
+weblogin-code-seconds: 180
+
+# How long an editor stays logged into the web UI, in hours.
+#
+# This is the session itself, not the code above: once the code is exchanged,
+# the browser holds a token for this long before needing /claims weblogin
+# again. Long enough to cover a session of building; short enough that a
+# forgotten browser tab does not stay an editor forever.
+session-hours: 12
+
 # Grid size that claim corners snap to, in blocks. 16 is one chunk.
 #
 # Leave this at 16 unless you know what you are changing. Chunk-aligned claims

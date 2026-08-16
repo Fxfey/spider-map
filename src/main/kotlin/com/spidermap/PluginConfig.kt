@@ -2,6 +2,7 @@ package com.spidermap
 
 import org.bukkit.plugin.java.JavaPlugin
 import java.nio.file.Path
+import java.time.Duration
 
 /**
  * Typed snapshot of config.yml.
@@ -15,12 +16,16 @@ class PluginConfig private constructor(
     val claimsFile: Path,
     val vertexCap: Int,
     val chunkSnapSize: Int,
+    val webLoginCodeLifetime: Duration,
+    val sessionLifetime: Duration,
 ) {
 
     /** One line, so a misconfigured server is obvious from the startup log. */
     fun describe(): String =
         "web-port=$webPort, claims-file=$claimsFile, " +
-            "vertex-cap=$vertexCap, chunk-snap-size=$chunkSnapSize"
+            "vertex-cap=$vertexCap, chunk-snap-size=$chunkSnapSize, " +
+            "weblogin-code-seconds=${webLoginCodeLifetime.toSeconds()}, " +
+            "session-hours=${sessionLifetime.toHours()}"
 
     companion object {
 
@@ -28,6 +33,8 @@ class PluginConfig private constructor(
         private const val DEFAULT_CLAIMS_FILE = "claims.json"
         private const val DEFAULT_VERTEX_CAP = 50
         private const val DEFAULT_CHUNK_SNAP_SIZE = 16
+        private const val DEFAULT_WEBLOGIN_CODE_SECONDS = 180L
+        private const val DEFAULT_SESSION_HOURS = 12L
 
         fun load(plugin: JavaPlugin): PluginConfig {
             // Writes the bundled config.yml on first run, then leaves it alone.
@@ -46,6 +53,16 @@ class PluginConfig private constructor(
                 claimsFile = plugin.dataFolder.toPath().resolve(claimsFileName),
                 vertexCap = config.getInt("vertex-cap", DEFAULT_VERTEX_CAP),
                 chunkSnapSize = config.getInt("chunk-snap-size", DEFAULT_CHUNK_SNAP_SIZE),
+                // Floored at one second: zero or negative would expire every
+                // code the instant it was issued, making web login impossible
+                // in a way that looks like a bug rather than a setting.
+                webLoginCodeLifetime = Duration.ofSeconds(
+                    config.getLong("weblogin-code-seconds", DEFAULT_WEBLOGIN_CODE_SECONDS)
+                        .coerceAtLeast(1L),
+                ),
+                sessionLifetime = Duration.ofHours(
+                    config.getLong("session-hours", DEFAULT_SESSION_HOURS).coerceAtLeast(1L),
+                ),
             )
         }
     }
