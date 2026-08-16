@@ -22,6 +22,14 @@ class SpiderMapPlugin : JavaPlugin() {
         // In memory: a login code lives for minutes, so surviving a restart
         // would buy nothing and would mean writing credentials to disk.
         val loginCodes = LoginCodeStore(pluginConfig.webLoginCodeLifetime)
+        val sessions = SessionStore(pluginConfig.sessionLifetime)
+
+        // Generous enough that a few mistyped digits go unnoticed, tight enough
+        // that a script cannot walk a six-digit space (SDLC §2).
+        val loginAttempts = RateLimiter(
+            maxAttempts = LOGIN_ATTEMPTS_PER_WINDOW,
+            window = LOGIN_ATTEMPT_WINDOW,
+        )
 
         getCommand("claims")?.let { command ->
             val executor = ClaimsCommand(
@@ -45,6 +53,14 @@ class SpiderMapPlugin : JavaPlugin() {
                     store = claimStore,
                     validator = ClaimValidator(vertexCap = pluginConfig.vertexCap),
                 ),
+                authRoutes = AuthRoutes(
+                    codes = loginCodes,
+                    sessions = sessions,
+                    editors = editorStore,
+                    attempts = loginAttempts,
+                    server = server,
+                    sessionLifetime = pluginConfig.sessionLifetime,
+                ),
             ).apply { start() }
         } catch (e: Exception) {
             // A bound port would otherwise leave the plugin "enabled" but with
@@ -61,5 +77,15 @@ class SpiderMapPlugin : JavaPlugin() {
         webServer?.stop()
         webServer = null
         logger.info("spider-map v${pluginMeta.version} disabled")
+    }
+
+    private companion object {
+        /**
+         * Ten tries in five minutes. Enough that mistyping a digit twice is a
+         * non-event; far too few to walk a six-digit code, which would need
+         * roughly a year at this rate.
+         */
+        const val LOGIN_ATTEMPTS_PER_WINDOW = 10
+        val LOGIN_ATTEMPT_WINDOW: java.time.Duration = java.time.Duration.ofMinutes(5)
     }
 }

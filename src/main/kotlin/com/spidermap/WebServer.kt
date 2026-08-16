@@ -15,6 +15,7 @@ class WebServer(
     private val logger: ComponentLogger,
     private val port: Int,
     private val claimRoutes: ClaimRoutes,
+    private val authRoutes: AuthRoutes,
 ) {
 
     private var app: Javalin? = null
@@ -35,6 +36,7 @@ class WebServer(
             }
             // Javalin 7 declares routes through config rather than on the app.
             claimRoutes.register(config.routes)
+            authRoutes.register(config.routes)
         }.start(port)
 
         announceReady()
