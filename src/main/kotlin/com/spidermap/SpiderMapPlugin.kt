@@ -15,6 +15,15 @@ class SpiderMapPlugin : JavaPlugin() {
 
         val claimStore = ClaimStore(pluginConfig.claimsFile)
 
+        // Sits beside claims.json in the plugin folder, deliberately separate:
+        // granting editor rights must never touch claim data (SDLC §4).
+        val editorStore = EditorStore(dataFolder.toPath().resolve("editors.json"), logger)
+        getCommand("claims")?.let { command ->
+            val executor = EditorCommand(editorStore, server)
+            command.setExecutor(executor)
+            command.tabCompleter = executor
+        } ?: logger.severe("Command 'claims' is missing from plugin.yml — editor management is unavailable")
+
         try {
             webServer = WebServer(
                 logger = componentLogger,

@@ -4,3 +4,20 @@ main: com.spidermap.SpiderMapPlugin
 api-version: '26.2'
 description: Draw and manage land claims from a web UI.
 website: https://github.com/Fxfey/spider-map
+
+commands:
+  claims:
+    description: Manage spider-map land claims.
+    usage: |-
+      /claims editor list — show the map editors
+      /claims editor add <player> — let someone edit claims
+      /claims editor remove <player> — take that away
+    permission: spidermap.command.claims
+
+permissions:
+  # Defaults to op, so this works on a bare Paper install with no permission
+  # plugin (SDLC §2). A server that runs one can still delegate it to staff who
+  # aren't full operators.
+  spidermap.command.claims:
+    description: Manage the list of players allowed to edit claims.
+    default: op
