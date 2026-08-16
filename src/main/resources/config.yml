@@ -7,6 +7,20 @@
 # API from the same origin (so the browser never needs CORS).
 web-port: 8080
 
+# The address players should open to reach the web UI.
+#
+# Leave blank to use http://localhost:<web-port>, which is right when you are
+# playing on the same machine as the server. Set it to whatever players
+# actually type otherwise — your server's address, or the public hostname if
+# you have put a reverse proxy in front (SDLC §7):
+#
+#   public-url: "https://map.example.com"
+#   public-url: "http://203.0.113.10:8080"
+#
+# This is only used for the clickable link in /claims weblogin; it does not
+# change what the server listens on.
+public-url: ""
+
 # Claim storage file, relative to this plugin's folder
 # (plugins/spider-map/). Written atomically, so it is safe to back up while
 # the server is running.
@@ -15,12 +29,14 @@ claims-file: claims.json
 # Maximum number of vertices a single claim may have.
 vertex-cap: 50
 
-# How long a /claims weblogin code stays valid, in seconds.
+# How long a /claims weblogin code stays valid, in minutes.
 #
-# Short on purpose. The code is a credential typed into a browser, so the
-# window only needs to cover reading it off chat and retyping it. Codes are
-# also single-use, and running the command again replaces the previous one.
-weblogin-code-seconds: 180
+# Long enough to run the command, find the browser tab and get distracted on
+# the way. Codes are single-use, and running the command again replaces the
+# previous one, so an unused code is not left lying around.
+#
+# SDLC §2 suggested 2-5 minutes; that assumed you were already at the browser.
+weblogin-code-minutes: 30
 
 # How long an editor stays logged into the web UI, in hours.
 #

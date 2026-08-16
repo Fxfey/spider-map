@@ -4,39 +4,29 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import org.bukkit.Server
-import org.bukkit.command.Command
-import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
-import org.bukkit.command.TabCompleter
 import java.util.UUID
 
 /**
  * `/claims editor add|remove|list` — the whole editor-management surface.
  *
- * Gated by the `spidermap.command.claims` permission, which plugin.yml defaults
- * to op. That works on a bare Paper install and still lets a server that *does*
- * run a permission plugin delegate it to staff who aren't full operators.
+ * Not a CommandExecutor: Bukkit allows one per command, and [ClaimsCommand]
+ * owns `/claims` and routes here. Permission is checked by the dispatcher.
  */
 class EditorCommand(
     private val editors: EditorStore,
     private val server: Server,
-) : CommandExecutor, TabCompleter {
+) {
 
-    override fun onCommand(
-        sender: CommandSender,
-        command: Command,
-        label: String,
-        args: Array<out String>,
-    ): Boolean {
-        if (args.size < 2 || !args[0].equals("editor", ignoreCase = true)) {
-            if (args.size == 1 && args[0].equals("editor", ignoreCase = true)) {
-                listEditors(sender)
-                return true
-            }
-            return false // Bukkit prints the usage line from plugin.yml.
+    /** @param args everything after `editor`. Returns false to print the usage line. */
+    fun handle(sender: CommandSender, args: List<String>): Boolean {
+        // Bare `/claims editor` reads as "show me the editors".
+        if (args.isEmpty()) {
+            listEditors(sender)
+            return true
         }
 
-        when (args[1].lowercase()) {
+        when (args[0].lowercase()) {
             "list" -> listEditors(sender)
             "add" -> changeEditor(sender, args, adding = true)
             "remove" -> changeEditor(sender, args, adding = false)
@@ -70,13 +60,13 @@ class EditorCommand(
         }
     }
 
-    private fun changeEditor(sender: CommandSender, args: Array<out String>, adding: Boolean) {
-        if (args.size < 3) {
+    private fun changeEditor(sender: CommandSender, args: List<String>, adding: Boolean) {
+        if (args.size < 2) {
             sender.sendMessage(problem("Usage: /claims editor ${if (adding) "add" else "remove"} <player>"))
             return
         }
 
-        val target = args[2]
+        val target = args[1]
         val uuid = resolve(target)
 
         if (uuid == null) {
@@ -125,24 +115,19 @@ class EditorCommand(
         return runCatching { UUID.fromString(target) }.getOrNull()
     }
 
-    override fun onTabComplete(
-        sender: CommandSender,
-        command: Command,
-        label: String,
-        args: Array<out String>,
-    ): List<String> = when (args.size) {
-        1 -> listOf("editor").filter { it.startsWith(args[0], ignoreCase = true) }
-        2 -> listOf("add", "remove", "list").filter { it.startsWith(args[1], ignoreCase = true) }
-        3 -> when (args[1].lowercase()) {
+    /** @param args everything after `editor`. */
+    fun complete(args: List<String>): List<String> = when (args.size) {
+        1 -> listOf("add", "remove", "list").filter { it.startsWith(args[0], ignoreCase = true) }
+        2 -> when (args[0].lowercase()) {
             // Completing "remove" from the editor list rather than from online
             // players: the person being removed may well be offline.
             "remove" -> editors.load()
                 .mapNotNull { server.getOfflinePlayer(it).name }
-                .filter { it.startsWith(args[2], ignoreCase = true) }
+                .filter { it.startsWith(args[1], ignoreCase = true) }
 
             "add" -> server.onlinePlayers
                 .map { it.name }
-                .filter { it.startsWith(args[2], ignoreCase = true) }
+                .filter { it.startsWith(args[1], ignoreCase = true) }
 
             else -> emptyList()
         }

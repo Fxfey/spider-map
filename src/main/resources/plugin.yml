@@ -8,16 +8,19 @@ website: https://github.com/Fxfey/spider-map
 commands:
   claims:
     description: Manage spider-map land claims.
+    # No permission here on purpose. Managing editors is an operator's job, but
+    # *being* an editor is independent of op (SDLC §2), so a non-op editor must
+    # still be able to run weblogin. The subcommands check for themselves.
     usage: |-
+      /claims weblogin — get a code to log into the web UI
       /claims editor list — show the map editors
       /claims editor add <player> — let someone edit claims
       /claims editor remove <player> — take that away
-    permission: spidermap.command.claims
 
 permissions:
   # Defaults to op, so this works on a bare Paper install with no permission
-  # plugin (SDLC §2). A server that runs one can still delegate it to staff who
-  # aren't full operators.
-  spidermap.command.claims:
+  # plugin. A server that runs one can still delegate it to staff who aren't
+  # full operators.
+  spidermap.editors.manage:
     description: Manage the list of players allowed to edit claims.
     default: op
