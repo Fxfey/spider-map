@@ -1,25 +1,12 @@
 package com.spidermap
 
-import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-
-/** A clock the test moves by hand, so expiry needs no sleeping. */
-private class TestClock(private var now: Instant = Instant.parse("2026-08-15T12:00:00Z")) : Clock() {
-    override fun instant(): Instant = now
-    override fun getZone() = ZoneOffset.UTC
-    override fun withZone(zone: java.time.ZoneId?): Clock = this
-    fun advance(duration: Duration) {
-        now = now.plus(duration)
-    }
-}
 
 class LoginCodeStoreTest {
 
